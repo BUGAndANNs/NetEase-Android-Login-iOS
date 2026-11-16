@@ -2,12 +2,38 @@ plugins {
     alias(libs.plugins.android.application)
 }
 
-// 可选：通过环境变量注入发布签名；未配置时回退到 debug 签名，保证产物可直接安装。
-def ksFile = System.getenv("RELEASE_STORE_FILE")
-def ksStorePass = System.getenv("RELEASE_STORE_PASSWORD")
-def ksAlias = System.getenv("RELEASE_KEY_ALIAS")
-def ksKeyPass = System.getenv("RELEASE_KEY_PASSWORD")
+// 发布签名：优先读 local.properties（已被 .gitignore 排除，密钥口令不进仓库），
+// 其次读环境变量；两者都没配时才回退 debug 签名，保证 clone 下来就能直接构建安装。
+//
+// local.properties 里写这四行（路径用正斜杠，避免 Properties 把 \ 当转义符）：
+//   release.storeFile=E:/ProgrammingCode/Ratwl.keystore
+//   release.storePassword=你的密钥库口令
+//   release.keyAlias=你的别名
+//   release.keyPassword=你的私钥口令（多数情况和密钥库口令相同）
+def signingProps = new Properties()
+def signingPropsFile = rootProject.file('local.properties')
+if (signingPropsFile.exists()) {
+    signingPropsFile.withInputStream { signingProps.load(it) }
+}
+
+def signingValue = { String propKey, String envKey ->
+    def fromProp = signingProps.getProperty(propKey)
+    if (fromProp != null && !fromProp.trim().isEmpty()) {
+        return fromProp.trim()
+    }
+    def fromEnv = System.getenv(envKey)
+    return (fromEnv != null && !fromEnv.trim().isEmpty()) ? fromEnv.trim() : null
+}
+
+def ksFile = signingValue('release.storeFile', 'RELEASE_STORE_FILE')
+def ksStorePass = signingValue('release.storePassword', 'RELEASE_STORE_PASSWORD')
+def ksAlias = signingValue('release.keyAlias', 'RELEASE_KEY_ALIAS')
+def ksKeyPass = signingValue('release.keyPassword', 'RELEASE_KEY_PASSWORD')
 def hasReleaseKeystore = ksFile && ksStorePass && ksAlias && ksKeyPass
+
+logger.lifecycle(hasReleaseKeystore
+        ? "签名：使用发布 keystore -> ${ksFile}（别名 ${ksAlias}）"
+        : "签名：未配置发布 keystore，回退 debug 签名（仅自用，勿用于正式分发）")
 
 android {
     namespace 'cn.ratwl.androidloginios'
@@ -17,8 +43,8 @@ android {
         applicationId "cn.ratwl.androidloginios"
         minSdk 26
         targetSdk 36
-        versionCode 24
-        versionName "5.19"
+        versionCode 25
+        versionName "5.20"
     }
 
     signingConfigs {

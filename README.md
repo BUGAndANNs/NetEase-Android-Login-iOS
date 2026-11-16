@@ -355,11 +355,20 @@ App 的「模块 / 版本」页会直接显示**当前运行模式**（真机/�
 ./gradlew assembleRelease    # 发布包
 ```
 
-未配置签名时 release 回退 debug 签名，产物可直接安装。要正式签名，注入四个环境变量：
+签名按三级优先级取值：`local.properties` → 环境变量 → debug 签名（产物仍可直接安装，但仅适合自用）。推荐第一种，因为 `local.properties` 已被 `.gitignore` 排除，口令不会进仓库：
 
-```bash
-RELEASE_STORE_FILE / RELEASE_STORE_PASSWORD / RELEASE_KEY_ALIAS / RELEASE_KEY_PASSWORD
+```properties
+release.storeFile=/absolute/path/to/your.keystore
+release.storePassword=密钥库口令
+release.keyAlias=别名
+release.keyPassword=私钥口令
 ```
+
+路径**用正斜杠**——`java.util.Properties` 会把反斜杠当转义符，`E:\a\b` 会变成 `E:ab`。查别名可以用 `keytool -list -v -keystore your.keystore`。
+
+CI 环境（如 GitHub Actions）用环境变量注入同一组值：`RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` / `RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`。
+
+> **更换签名后无法覆盖升级**。Android 要求同包名 APK 的签名一致，换钥后旧版本必须先卸载（`INSTALL_FAILED_UPDATE_INCOMPATIBLE`），游戏和容器里的模块副本也要重装。自 v5.20 起本仓库的正式包使用固定的发布证书，后续版本可正常覆盖升级。
 
 > **不要打开 R8**。容器会把模块 dex 加载进**宿主** ClassLoader，混淆后的单字母类名（如 `HookConfig` → `q`）会和容器自己的类撞名，运行时直接 `NoSuchMethodError`。`minifyEnabled false` 是刻意保留的。
 
