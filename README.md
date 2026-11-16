@@ -44,6 +44,7 @@
 
 ### Xposed 模块（注入侧）
 
+- **按设备自动分流**：真机 + 面具 → 「面具直连」，所有网易游戏都能用；否则 → 「框架限定」，只认已验证的两款（详见[两种运行模式](#7-两种运行模式面具直连--框架限定)）。
 - **MuMu 渠道伪装**：`netease.mumu2_free_dev`，覆盖 4 个取渠道的出口。
 - **MuMu 设备标识**：`SystemProperties.get("ro.build.id")` → `V417IR`。
 - **平台选择**：`select_platform` / `select_platforms` 三端开关，光·遇为「自选三端」，第五人格为「PC」。
@@ -118,6 +119,8 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
 ## 二、Xposed 模块
 
 模块做的事只有一句：**让游戏以为自己在 MuMu 模拟器里跑**。MuMu 渠道的官服 SDK 会放出平台选择与扫码入口，这才有了"选 iOS / 鸿蒙 / PC"的机会。
+
+注入之前先判环境：真机 + 面具走「面具直连」（所有网易游戏都注入），其余走「框架限定」（只认两款），详见[第 7 节](#7-两种运行模式面具直连--框架限定)。
 
 ### 1. 渠道伪装
 
@@ -197,6 +200,42 @@ DISABLE_REFLECT_HOOK   // 关反射代理
 FORCE_PLATFORM         // 强制平台
 ```
 
+### 7. 两种运行模式（面具直连 / 框架限定）
+
+模块在入口处先判设备环境，再决定门禁范围。判定逻辑在 `core/DeviceEnv.java`：
+
+```
+真机 且 有面具/root   →  面具直连（ROOT）   →  按 com.netease.* / com.godlike.* 全量放行
+其余情况（含所有容器） →  框架限定（FRAMEWORK） →  只认 com.netease.sky / com.netease.dwrg
+```
+
+**「有面具」怎么判**（只看文件与 `Build` 字段，绝不 `exec`、不弹授权框，注入进程里也能安全调用）：
+
+| 检查项 | 内容 |
+| --- | --- |
+| su 落点 | `/system/bin/su`、`/system/xbin/su`、`/sbin/su`、`/debug_ramdisk/su`、`/data/local/xbin/su` 等 11 处 |
+| 面具落点 | `/data/adb/magisk`、`/data/adb/modules`、`/sbin/.magisk`、`/debug_ramdisk/.magisk`、`/data/adb/ksu`、`/data/adb/ap` |
+| PATH | 进程 PATH 里出现 `magisk` 或 `/sbin` |
+| 面具管理器 | 界面侧额外查 `com.topjohnwu.magisk`、`io.github.huskydg.magisk`（Delta）、`io.github.vvb2060.magisk`（Alpha）、`me.weishu.kernelsu`、`me.bmax.apatch` |
+
+**「模拟器」怎么判**，按信号强度排：
+
+1. **CPU 架构（最硬）**：`Build.SUPPORTED_ABIS` 里出现 `x86` / `i386` / `i686` 即判模拟器。原因是现在的 PC 模拟器都会伪装机型——实测某 Android 12 虚拟机把 `ro.product.model` 改成红米 `23117RK66C`、`ro.product.brand` 改成 `Redmi`、`ro.build.id` 直接写成 `V417IR`，只靠 `Build` 字段会整体漏判；而 ABI 很难伪装：宿主是 x86_64、又要能跑 arm 的 so，于是上报 `["x86_64","arm64-v8a","x86",...]` 这种混合表，真机永远不会出现 x86。
+2. **Build 字段**：`FINGERPRINT / MODEL / HARDWARE / PRODUCT / BRAND / MANUFACTURER / DEVICE` 命中 `goldfish`、`ranchu`、`vbox86`、`genymotion`、`bluestacks`、`mumu`、`nox`、`ldplayer` 等；`PRODUCT` / `DEVICE` 整值等于 `generic`、`google_sdk`、`sdk_x86`。
+3. **设备节点**：存在 `/dev/qemu_pipe`、`/dev/goldfish_pipe`、`/system/lib/libc_malloc_debug_qemu.so`、`/sys/qemu_trace`。
+
+模拟器一律退回框架限定：在 MuMu 里冒充 MuMu 没有意义，而且模拟器自带的 `su` 并不等于一套可用的面具 + LSPosed 环境。
+
+
+**面具直连下为什么敢放开范围**：面具下模块是 LSPosed **直接注入游戏自己的进程**，`packageName` 就是游戏包名，不存在"宿主进程里混着所有 guest"的问题；这与 `netease-mumu`「不做门禁」的做法等价。我们只加了两个约束：
+
+1. 只放行 `com.netease.` / `com.godlike.` 前缀；
+2. 显式排除非游戏类网易应用（网易云音乐、网易新闻、网易邮箱、网易严选、蜗牛读书、UU 远程、网易大神、将军令、云信、epay），命中即跳过，连注入标记都不写。
+
+**容器为什么永远走限定**：Dual Space / 元萝卜的宿主进程把它自己所有的 guest 装在一个进程里，`packageName` 报的是容器包名。在那种进程里按"网易游戏前缀"放行，等于给容器的每个进程都装一遍 hook——污染面太大。所以 `XposedEntry` 里容器前缀分支**排在**全量放行之前，哪怕设备有面具。
+
+**这对已跑通的 Dual Space 意味着什么**：没有影响。Dual Space 走的是容器分支，走的还是 v5.15 那套逻辑，一个字节没改。
+
 ---
 
 ## 三、网易应用过滤与目标选择
@@ -217,21 +256,24 @@ FORCE_PLATFORM         // 强制平台
 
 所以这里不做白名单，让用户自己试——试不通会明确报错（`sdk_read_failed` / `bridge_missing` / `sdk_rejected`）。
 
-### XP 侧：必须严
+### XP 侧：框架下必须严，面具下可以放开
 
-`core/GameProfile` 是**硬白名单**，目前只有两款：
+`core/GameProfile` 是**框架模式下的硬白名单**，目前只有两款：
 
 ```java
 SKY  = new GameProfile("com.netease.sky",  "光·遇",   true, true);
 IDV  = new GameProfile("com.netease.dwrg", "第五人格", true, true);
 ```
 
-双层门禁：
+三层门禁，按顺序判定（`XposedEntry.looksLikeTarget()`）：
 
-1. `XposedEntry.looksLikeTarget()`：包名/进程名必须精确等于 `com.netease.sky` / `com.netease.dwrg`，或命中容器前缀；**不再用** `startsWith("com.netease.")`——那会把所有网易应用都注进去。
-2. 容器前缀兜底：`com.xunijun.app`（Dual Space）、`top.bienvenido.`（元萝卜）、`com.katana` 等，用于"游戏跑在宿主进程里"的场景。
+1. **两款精确包名**：包名/进程名精确等于 `com.netease.sky` / `com.netease.dwrg`。
+2. **容器前缀**：`com.xunijun.app`（Dual Space）、`top.bienvenido.`（元萝卜）、`com.katana` 等。用于"游戏跑在宿主进程里、报的是容器包名"的场景。**这一支永远只走限定**，即使设备有面具。
+3. **面具直连放行**：真机 + 面具时，`com.netease.` / `com.godlike.` 前缀全部放行，并排除非游戏类网易应用。
 
-为什么这么严：hook 是**改游戏内部行为**，渠道值、平台值、支付 JSON 的字段名每个游戏都不一样。注错了轻则无效，重则闪退。所以新增游戏必须**逐游戏实测**后再 `register` 一行，界面上的「适配范围」卡片也会同步显示。
+为什么框架下要这么严：容器里 hook 是**改游戏内部行为**，渠道值、平台值、支付 JSON 的字段名每个游戏都不一样，而且容器进程里一个 hook 崩掉会带崩整个空间。所以框架下必须逐游戏实测后 `register`，界面上的「适配范围」卡片也会同步显示。
+
+为什么面具下可以放开：面具是**一进程一注入**，`packageName` 就是游戏自己的包名，注错了最坏结果是"这个游戏没效果"，不会波及其它应用；渠道值也是 MuMu 的通用渠道，凡是用 UniSDK 的网易游戏都认。代价是可能有些游戏对渠道值不敏感、仍然不出三端——那就退回 iOS 登录那条路。
 
 ---
 
@@ -262,16 +304,19 @@ IDV  = new GameProfile("com.netease.dwrg", "第五人格", true, true);
 
 ## 五、兼容性矩阵
 
-| 环境 | iOS 登录 | Xposed 模块 | 备注 |
-| --- | :-: | :-: | --- |
-| 真机，无 root | ✅ | ❌ | App 侧照常可用 |
-| Magisk + LSPosed | ✅ | ✅ | 勾选两款游戏后强制停止再启动 |
-| LSPatch 内嵌 | ✅ | ✅ | 模块 APK 作为内嵌模块打进游戏 |
-| Dual Space 1.94 | ✅ | ✅ | 已实测：光遇出三端，日志全绿 |
-| 元萝卜 1.0.14 + Android 15 及以下 | ✅ | 未验证 | 官方适配范围是 Android 12–15 |
-| 元萝卜 1.0.14 + Android 16/17 | ✅ | ❌ | 见下 |
+| 环境 | iOS 登录 | Xposed 模块 | 运行模式 | 备注 |
+| --- | :-: | :-: | --- | --- |
+| 真机 + 面具 + LSPosed | ✅ | ✅ | 面具直连 | 所有网易游戏都注入；非游戏类网易应用已排除 |
+| LSPatch 内嵌 | ✅ | ✅ | 框架限定 | 无 root，按内嵌的单个游戏算，所以只认两款 |
+| 真机，无 root，无框架 | ✅ | ❌ | — | App 侧照常可用 |
+| **Dual Space 1.94（推荐）** | ✅ | ✅ | 框架限定 | 已实测：光遇出三端，日志全绿 |
+| 元萝卜 1.0.14 + Android 15 及以下 | ✅ | 未验证 | 框架限定 | 官方适配范围是 Android 12–15 |
+| 元萝卜 1.0.14 + Android 16/17 | ✅ | ❌ | 框架限定 | 见下 |
+| 模拟器（MuMu、雷电等） | ✅ | ✅ | 框架限定 | 已判定为模拟器，不做"冒充自己" |
 
 **关于元萝卜在 Android 16/17 上不生效**：现象是模块代码确实在跑（logcat 有输出），但所有 hook 一次都不触发，连 `android.app.Application.onCreate` 这种框架类都不进，`ro.build.id` 也没被改写。根因不在模块——元萝卜内置的 Pine 版引擎按旧符号 `art::hiddenapi::ShouldDenyAccessToMember` 解析，而 Android 16/17 的 ART 给该函数加了 `Handle` 参数，符号签名变化后解析失败，整个引擎失效。同一个 APK 在 Dual Space 上完全正常，可作为对照。
+
+**为什么把 Dual Space 排在元萝卜前面**：Dual Space 在 Android 16/17 上实测可用；元萝卜的可用性受限于它自己的引擎版本，且官方只声明支持到 Android 15。所以推荐路径是「有面具用面具，没面具用 Dual Space，元萝卜放最后」。
 
 ---
 
@@ -279,10 +324,17 @@ IDV  = new GameProfile("com.netease.dwrg", "第五人格", true, true);
 
 1. 安装 APK（既是 App 也是模块）。
 2. **只用 iOS 登录**：直接打开 App，按[上文步骤](#使用步骤)操作，不需要任何框架。
-3. **要用平台选择**：
-   - LSPosed：启用模块 → 勾选《光·遇》/《第五人格》→ 强制停止游戏 → 重新启动。
-   - Dual Space：把模块和游戏都装进空间 → 长按游戏 →「管理插件」→ 启用本模块 → 作用域选「当前应用」。
+3. **要用平台选择**，按顺序挑一条：
+
+   | 优先级 | 环境 | 做法 |
+   | --- | --- | --- |
+   | 1 | 面具 + LSPosed | 启用模块 → 勾选要用的游戏（面具下其它网易游戏也认）→ 强制停止 → 重新启动 |
+   | 2 | 免 ROOT · Dual Space | 把模块和游戏都装进空间 → 长按游戏 →「管理插件」→ 启用本模块 → 作用域选「当前应用」 |
+   | 3 | 免 ROOT · 元萝卜 | 同上，但仅限 Android 12–15；Android 16/17 上引擎不工作，不要浪费时间 |
+
 4. 进游戏后：光遇点账号图标 → 切换账号，能看到 iOS / Android / 鸿蒙三端；第五人格直接以 PC 端登录。
+
+App 的「模块 / 版本」页会直接显示**当前运行模式**（真机/模拟器 + 有无面具 + 全量/限定），装完可以先看一眼再动手。
 
 模块配置（渠道 / 设备标识开关）存在模块自己的 SharedPreferences 里，改完要重启游戏进程才生效。
 
@@ -335,7 +387,8 @@ app/src/main/
 │   │   ├── BridgePage / HttpRequest       # 桥接页与最小 HTTP 解析
 │   │   └── BridgePrefs                    # 会话状态持久化
 │   ├── core/                              # 模块配置与适配白名单
-│   │   ├── GameProfile                    # 硬白名单（光遇 / 第五）
+│   │   ├── DeviceEnv                      # 真机/模拟器、面具检测 → 决定运行模式
+│   │   ├── GameProfile                    # 框架模式下的硬白名单（光遇 / 第五）
 │   │   ├── ModuleConfig / HookConfig      # 开关与运行时配置
 │   │   └── CloneHosts / Xlog
 │   ├── xposed/                            # 注入侧
@@ -362,9 +415,14 @@ app/src/main/
 
 模块会被塞进游戏进程，任何多余的库都会进入宿主 ClassLoader，撞名风险随体积线性上升。所以整界面是平台原生 `View` + 自绘 `UiKit`，APK 只有 80KB 左右。
 
-### 门禁为什么不用 `startsWith`
+### 门禁为什么不用无条件的 `startsWith`
 
-`com.netease.` 前缀下还有云音乐、新闻、邮箱、UU 加速器等等。全注进去的后果是这些应用也被改 `ro.build.id`、也会被塞渠道值——既无意义又容易崩。精确包名 + 容器前缀是唯一稳妥的判定。
+`com.netease.` 前缀下还有云音乐、新闻、邮箱、UU 远程等等。全注进去的后果是这些应用也被改 `ro.build.id`、也会被塞渠道值——既无意义又容易崩。所以门禁是分模式的：
+
+- **框架下**（免 ROOT 容器，最容易互相带崩的场景）：精确包名 + 容器前缀，唯一稳妥的判定。
+- **面具下**（一进程一注入）：允许按 `com.netease.` / `com.godlike.` 放行——这才谈得上"让很多网易游戏用上 XP"，但同样把非游戏类应用显式排除。
+
+同样是"放行所有网易应用"，在两种环境里的风险完全不同，这就是为什么要分流而不是二选一。
 
 ### 平台策略为什么不统一
 
@@ -383,7 +441,12 @@ app/src/main/
 
 - **仅网易官服**：B 站服、渠道服账号体系不同，不适用。
 - **依赖游戏导出网页桥**：未导出 `GMWebviewActivity` 的客户端无法使用 iOS 登录。
-- **XP 注入只适配两款游戏**：光遇、第五人格。其它网易应用不会注入（这是刻意设计）。
+- **XP 注入范围随环境变**：面具下对所有网易游戏生效，框架下只对光遇、第五人格生效。
+- **面具方向未在真机上验证**：作者手上只有一台无 root 的 Android 17 真机、和一台 Android 12 x86
+  虚拟机（伪装成红米、带 `su`、带 Magisk Delta）。已在虚拟机上验证了**误判防护**——它被判为
+  「模拟器 · 已检测到面具」，模式正确地落到「框架限定」而不是「面具直连」。**真机 + 面具 → 面具直连**
+  这一支还没有硬件验过，第一次用时建议先看 App 的「运行模式」是否显示「面具直连」，再看游戏内提示条
+  第三行是否「面具直连 · 网易游戏全量」。
 - **元萝卜 + Android 16/17 不可用**：容器引擎与新版 ART 不兼容，与本模块无关。
 - **种子格式需逐游戏验证**：不同游戏对 `pc_ext_info` 的接受程度不同，报 `sdk_invalid_session` 即表示尚未适配。
 
@@ -391,9 +454,34 @@ app/src/main/
 
 ## 致谢与许可
 
-本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**，协议常量、种子结构、回环桥与状态机均来自该项目，并按上游 v1.2 对齐（含 `is_remember` 字段）。感谢原作者的开源工作。
+本项目站在几个开源项目与个人研究之上。为了不产生误解，下面把**每一处借鉴的具体范围**写清楚。
 
-Xposed 模块部分的思路参考了社区公开的 MuMu 渠道伪装方案（如 [Naptila/netease-mumu](https://github.com/Naptila/netease-mumu)），以及早期版本 SkyXP 1.19 的 hook 组织方式；本项目的实现已按容器场景重写（多 ClassLoader、身份去重、异常隔离、诊断）。
+### 1. iOS 登录部分：`Naptila/netease-ios`（代码移植）
+
+本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.2** 对齐（含 `is_remember` 字段）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
+
+### 2. Xposed 模块部分：`Naptila/netease-mumu`（借鉴思路与常量，未复制代码）
+
+**借鉴了，但只限于「伪装成 MuMu」这条思路和两个必须一致的值。** 具体是：
+
+- 渠道名 `netease.mumu2_free_dev`
+- `ro.build.id = V417IR`
+
+这两个值本身就是 MuMu 模拟器上报的真实常量——任何想冒充 MuMu 的实现都只能用同一组字符串，没有替换空间。这也是为什么两边的字符串会完全一样，它**不代表代码复制**：
+
+```text
+// netease-mumu 的全部实现（XposedInit.kt），共两件事
+SystemProperties.set  →  ro.build.id = V417IR
+反射代理              →  getChannel() = netease.mumu2_free_dev
+```
+
+本项目的实现按「容器 / 面具」两种运行场景重写，能力集是它的超集：多 ClassLoader、Class 身份去重、异常隔离、懒加载 + `findLoadedClass` 轮询补挂、注入诊断、平台选择、生命周期适配。补充两个可核对的事实：`netease-mumu` 的 `JsonHook.kt` 自己在注释里写着「老 HOOK 方案」，而它的 `XposedInit` **根本没有调用它**；它的 `handleLoadPackage` 也没有任何包名门禁。
+
+### 3. hook 组织方式：早期 [南一](https://github.com/BUGAndANNs) 自己研究的整理
+
+「把一个 SDK 的多个取值出口拆成互不依赖的小 hook」「类还没被加载出来时如何安全补挂」「哪些反射入口绝对不能遍历方法表」这套组织方式，来自早期 **南一** 自己研究的整理，代码在本项目的 `xposed/` 包里按容器与面具两种运行场景重写过一遍。作者主页：[https://github.com/BUGAndANNs](https://github.com/BUGAndANNs)。
+
+### 4. 许可
 
 由于 `netease-ios` 采用 **GPL-3.0**，本项目作为其衍生作品同样以 **GPL-3.0** 发布，见 [LICENSE](LICENSE)。任何基于本项目的修改版本在分发时也必须以 GPL-3.0 开源并保留原始版权声明。
 

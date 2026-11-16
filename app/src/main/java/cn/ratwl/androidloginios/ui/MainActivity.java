@@ -35,6 +35,7 @@ import cn.ratwl.androidloginios.bridge.InstalledApp;
 import cn.ratwl.androidloginios.bridge.MpayBridgeSession;
 import cn.ratwl.androidloginios.bridge.SeedStorage;
 import cn.ratwl.androidloginios.bridge.SeedTransportMode;
+import cn.ratwl.androidloginios.core.DeviceEnv;
 import cn.ratwl.androidloginios.core.GameProfile;
 import cn.ratwl.androidloginios.core.ModuleConfig;
 
@@ -461,20 +462,44 @@ public class MainActivity extends Activity {
         return panel;
     }
 
-    /** 适配范围卡片：模块只支持这两款游戏，其余应用一律不注入。 */
+    /**
+     * 适配范围卡片。
+     * <p>第一块是<b>运行环境</b>：真机/模拟器、有没有面具、由此决定的运行模式。
+     * 面具直连时模块按网易游戏包名全量放行；框架（Dual Space 等）下只认下面这两款。</p>
+     */
     private void renderScopeCard() {
         if (scopeBox == null) {
             return;
         }
         scopeBox.removeAllViews();
+        DeviceEnv.Mode mode = DeviceEnv.mode(this);
+        boolean wide = mode == DeviceEnv.Mode.ROOT;
+
         LinearLayout card = UiKit.card(this, p, 22f);
         int pad = UiKit.dp(this, 16);
         card.setPadding(pad, pad, pad, pad);
         card.addView(UiKit.text(this, "适配范围", 16f, p.text, true));
-        card.addView(UiKit.text(this, "版本仅作展示；以后验证过的网易游戏会追加到这里", 11f,
-                p.textDim, false));
+        card.addView(UiKit.text(this,
+                "注入范围由本机环境自动决定（见下）", 11f, p.textDim, false));
         card.addView(UiKit.spacer(this, 10));
-        card.addView(warnBox("仅《光·遇》《第五人格》会注入模块，请勿在其它应用上启用本模块"));
+
+        LinearLayout env = UiKit.row(this, Gravity.CENTER_VERTICAL);
+        env.setBackground(UiKit.solid(this, p.dark ? 0xFF16223A : 0xFFF4F7FD, 13f));
+        env.setPadding(UiKit.dp(this, 12), UiKit.dp(this, 9),
+                UiKit.dp(this, 12), UiKit.dp(this, 9));
+        LinearLayout envText = UiKit.column(this);
+        envText.addView(UiKit.text(this, DeviceEnv.describe(this), 12.5f, p.text, true));
+        envText.addView(UiKit.text(this, mode.label + " · " + DeviceEnv.explain(this), 10.5f,
+                p.textDim, false));
+        env.addView(envText, UiKit.weightedWrap(1f));
+        env.addView(UiKit.statusPill(this, wide ? "全量" : "限定",
+                p.primary, p.primaryContainer));
+        card.addView(env, UiKit.matchWrap());
+        card.addView(UiKit.spacer(this, 10));
+
+        card.addView(warnBox(wide
+                ? "面具直连：模块对所有网易游戏生效，非游戏类网易应用已排除"
+                : "仅《光·遇》《第五人格》会注入模块，请勿在其它应用上启用本模块"));
         card.addView(UiKit.spacer(this, 8));
         card.addView(UiKit.text(this,
                 "「一键准备 iOS 登录」不受这里限制：任意开放网页桥接口的网易官服游戏都能在本页直接准备。",
@@ -736,20 +761,31 @@ public class MainActivity extends Activity {
         int pad = UiKit.dp(this, 16);
 
         // 使用说明
+        DeviceEnv.Mode mode = DeviceEnv.mode(this);
         LinearLayout help = UiKit.card(this, p, 22f);
         help.setPadding(pad, pad, pad, pad);
         help.addView(UiKit.text(this, "使用说明", 15f, p.text, true));
         help.addView(UiKit.spacer(this, 8));
         help.addView(UiKit.text(this,
-                "ROOT 用户：面具 + LSPosed 启用模块，勾选上述两款游戏后强制停止再重启。\n\n"
-                        + "免 ROOT 用户：元萝卜等框架内嵌本模块后启动游戏。\n\n"
+                "当前运行模式：" + mode.label + "（" + DeviceEnv.describe(this) + "）\n\n"
+                        + "① 面具 + LSPosed（免 ROOT 里最彻底的一条）：启用模块 → "
+                        + "勾选要用的游戏 → 强制停止再启动。面具下模块按网易游戏包名全量生效，"
+                        + "不需要额外容器。\n\n"
+                        + "② 免 ROOT · 推荐 Dual Space：把模块和游戏都装进空间 → 长按游戏 → "
+                        + "「管理插件」→ 启用本模块 → 作用域选「当前应用」→ 启动游戏。"
+                        + "已在 Dual Space 1.94 + Android 16/17 实测可用。\n\n"
+                        + "③ 免 ROOT · 元萝卜：能力受限——它内置的引擎在 Android 16/17 上不生效，"
+                        + "只在它官方支持的 Android 12～15 上有机会，所以排在最后，不作为推荐路径。\n\n"
                         + "模块做的事：把游戏伪装成 MuMu 模拟器（渠道 + 设备标识），"
                         + "让游戏放出平台选择 / 扫码入口。\n\n"
-                        + "多开 / 虚拟空间（元萝卜、Dual Space）：游戏跑在宿主进程里，"
+                        + (mode == DeviceEnv.Mode.ROOT
+                        ? "面具直连模式：所有网易游戏都会被注入；网易云音乐、网易新闻这类"
+                        + "非游戏应用已在排除表里，不会被注入。\n\n"
+                        : "框架限定模式：只有《光·遇》《第五人格》会注入，其它网易应用一律不动。\n\n")
+                        + "多开 / 虚拟空间（Dual Space、元萝卜）：游戏跑在宿主进程里，"
                         + "类由沙盒自己的 ClassLoader 加载，模块会在沙盒创建游戏时再注入一次；"
                         + "前提是模块也被装进了沙盒（并勾选宿主作用域）。克隆空间建议先清一次游戏数据，"
                         + "避免旧的渠道值被缓存。\n\n"
-                        + "其它网易应用暂不在适配范围内，请勿勾选，模块不会对它们做任何注入。\n\n"
                         + "iOS 登录不需要框架配合，任何情况下都可以直接在本页准备 iOS 登录。",
                 12f, p.textDim, false));
         help.addView(UiKit.spacer(this, 10));

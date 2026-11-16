@@ -1,5 +1,6 @@
 package cn.ratwl.androidloginios.xposed;
 
+import cn.ratwl.androidloginios.core.DeviceEnv;
 import cn.ratwl.androidloginios.core.HookConfig;
 import de.robv.android.xposed.IXposedHookLoadPackage;
 import de.robv.android.xposed.callbacks.XC_LoadPackage;
@@ -15,15 +16,49 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  *       1.3 版之所以能在 Dual Space 里弹窗生效，纯粹是因为那一版「不做门禁、哪个进程都装」。</li>
  * </ul>
  * <p>
- * <b>本工程的口径：只适配《光·遇》与《第五人格》两款</b>，所以不沿用上游的
- * {@code startsWith("com.netease.")}（那会把所有网易应用都注进去），
- * 改成两款精确包名 + 容器包名前缀两条路。
+ * <b>本工程的口径分两套，按设备环境自动切换：</b>
+ * <ul>
+ *   <li><b>面具直连</b>（真机 + 面具，见 {@link DeviceEnv#mode()}）：模块被直接注入游戏进程，
+ *       此时按 {@code com.netease.*} 放行，<b>所有网易游戏都能用</b>——这一段与
+ *       {@code Naptila/netease-mumu} 的做法一致（它压根不做门禁）。非游戏类网易应用
+ *       在 {@link #NON_GAME_PACKAGES} 里排除掉，避免给网易云音乐之类改 {@code ro.build.id}。</li>
+ *   <li><b>框架限定</b>（其余情况，含所有免 ROOT 容器）：只适配《光·遇》《第五人格》两款，
+ *       走两款精确包名 + 容器包名前缀两条路。</li>
+ * </ul>
+ * 容器前缀那一支<b>永远</b>走限定：宿主进程里 guest 包名被抹掉，一旦放大范围就等于
+ * 给容器宿主的每个进程都装一遍 hook，得不偿失。
  */
 public class XposedEntry implements IXposedHookLoadPackage {
 
     /** 适配范围内的两款游戏。 */
     private static final String PKG_SKY = "com.netease.sky";   // 光·遇
     private static final String PKG_DWRG = "com.netease.dwrg"; // 第五人格
+
+    /** 面具直连模式下按这些前缀放行（网易游戏发行用的两个主前缀）。 */
+    private static final String[] NETEASE_PREFIXES = {
+            "com.netease.",
+            "com.godlike."
+    };
+
+    /**
+     * 这些是<b>网易的非游戏应用</b>，面具直连模式下也绝不注入。
+     * <p>理由：模块会给目标进程改 {@code ro.build.id}，对音乐/新闻/邮箱这类应用没有任何收益，
+     * 却平白改了它们的机型上报。命中即跳过，连 {@code bootMarker} 都不写。</p>
+     */
+    private static final String[] NON_GAME_PACKAGES = {
+            "com.netease.cloudmusic",   // 网易云音乐
+            "com.netease.newsreader",   // 网易新闻
+            "com.netease.mail",         // 网易邮箱
+            "com.netease.mobimail",
+            "com.netease.yanxuan",      // 网易严选
+            "com.netease.snailreader",  // 蜗牛读书
+            "com.netease.uuremote",     // UU 远程
+            "com.netease.mobistore",    // 应用汇（网易渠道）
+            "com.netease.gl",           // 网易大神
+            "com.netease.mkey",         // 将军令
+            "com.netease.nim",          // 云信 SDK
+            "com.netease.epay"
+    };
 
     /** 实测 / 常见的免 ROOT 容器包名前缀（guest 进程会以这些包名上报）。 */
     private static final String[] CONTAINER_PREFIXES = {
@@ -51,11 +86,15 @@ public class XposedEntry implements IXposedHookLoadPackage {
         if ("cn.ratwl.androidloginios".equals(lpparam.packageName)) {
             return;
         }
-        if (!looksLikeTarget(lpparam)) {
+        // 运行模式：真机 + 面具 → 直连全量；其余（含所有免 ROOT 容器）→ 限定两款。
+        // DeviceEnv 只看文件与 Build 字段，不会弹授权框、不会拖慢启动。
+        final boolean direct = DeviceEnv.mode() == DeviceEnv.Mode.ROOT;
+        if (!looksLikeTarget(lpparam, direct)) {
             return;
         }
 
         try {
+            final String scope = scopeLabel(lpparam, direct);
             // 先落一份「注入证明」：此刻还没有 Context，只能靠包名拼路径。
             // 后面 Application hook 若在容器里完全没生效，这就是唯一能拿到的证据。
             Diag.bootMarker(lpparam.packageName, lpparam.processName);
@@ -64,13 +103,15 @@ public class XposedEntry implements IXposedHookLoadPackage {
             Diag.note("注入 pkg=" + lpparam.packageName
                     + " proc=" + lpparam.processName
                     + " first=" + lpparam.isFirstApplication
-                    + " loader=" + lpparam.classLoader);
+                    + " loader=" + lpparam.classLoader
+                    + " 模式=" + (direct ? "面具直连" : "框架限定")
+                    + " 设备=" + DeviceEnv.isEmulator() + "/" + DeviceEnv.isRooted());
 
             if (HookFlags.DISABLE_ALL_HOOKS) {
                 // 空白诊断包：只证明「模块被加载进了这个进程」，一个 Hook 都不装
                 HookLogger.log("空白诊断模式：不安装任何 Hook");
                 AppLifecycle.install(lpparam.classLoader,
-                        banner(lpparam) + "\n空白诊断包（无 Hook）",
+                        banner(lpparam, scope) + "\n空白诊断包（无 Hook）",
                         canToast(lpparam), lpparam.processName);
                 return;
             }
@@ -119,7 +160,7 @@ public class XposedEntry implements IXposedHookLoadPackage {
             }
 
             // 提示文案在 onCreate 时才拼（那时各 Hook 的结果已经确定，能直接看到 平台=OK / FAIL）
-            AppLifecycle.install(lpparam.classLoader, banner(lpparam),
+            AppLifecycle.install(lpparam.classLoader, banner(lpparam, scope),
                     canToast(lpparam), lpparam.processName);
         } catch (Throwable t) {
             // 入口本身绝不向外抛异常，否则宿主直接起不来。
@@ -151,11 +192,23 @@ public class XposedEntry implements IXposedHookLoadPackage {
         return true;
     }
 
-    private static String banner(XC_LoadPackage.LoadPackageParam lpparam) {
-        return "WY 模块已注入\n" + lpparam.packageName;
+    private static String banner(XC_LoadPackage.LoadPackageParam lpparam, String scope) {
+        return "WY 模块已注入\n" + lpparam.packageName + "\n" + scope;
     }
 
-    private static boolean looksLikeTarget(XC_LoadPackage.LoadPackageParam lpparam) {
+    /** 这一进程是走「全量」还是「限定」，放在提示里方便一眼看出走对了没有。 */
+    private static String scopeLabel(XC_LoadPackage.LoadPackageParam lpparam, boolean direct) {
+        if (direct && isNeteaseGame(lpparam.packageName)) {
+            return "面具直连 · 网易游戏全量";
+        }
+        if (isContainerHost(lpparam)) {
+            return "框架限定 · 容器宿主";
+        }
+        return "框架限定 · 两款适配";
+    }
+
+    private static boolean looksLikeTarget(XC_LoadPackage.LoadPackageParam lpparam,
+                                          boolean direct) {
         String pkg = lpparam.packageName;
         String proc = lpparam.processName == null ? "" : lpparam.processName;
         // 只认这两款（面具 / LSPosed 下走这条）
@@ -163,9 +216,41 @@ public class XposedEntry implements IXposedHookLoadPackage {
                 || proc.startsWith(PKG_SKY) || proc.startsWith(PKG_DWRG)) {
             return true;
         }
-        // 容器里 guest 进程上报的是容器包名，只能按前缀放行
+        // 容器里 guest 进程上报的是容器包名，只能按前缀放行。
+        // 这一支<b>不参与全量放行</b>：容器宿主进程装着所有 guest，范围一放大就会污染其他应用。
         for (String prefix : CONTAINER_PREFIXES) {
             if (pkg.startsWith(prefix) || proc.startsWith(prefix)) {
+                return true;
+            }
+        }
+        // 面具直连：真机 + 面具时按网易游戏包名放行（与 netease-mumu 的「不设门禁」等价，
+        // 这里多做了两层过滤：只认网易游戏前缀 + 显式排除非游戏类网易应用）
+        return direct && isNeteaseGame(pkg);
+    }
+
+    private static boolean isContainerHost(XC_LoadPackage.LoadPackageParam lpparam) {
+        String pkg = lpparam.packageName == null ? "" : lpparam.packageName;
+        String proc = lpparam.processName == null ? "" : lpparam.processName;
+        for (String prefix : CONTAINER_PREFIXES) {
+            if (pkg.startsWith(prefix) || proc.startsWith(prefix)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    /** 这个包名是不是「网易游戏」（直连模式下才用）。 */
+    private static boolean isNeteaseGame(String pkg) {
+        if (pkg == null || pkg.isEmpty()) {
+            return false;
+        }
+        for (String skip : NON_GAME_PACKAGES) {
+            if (pkg.equals(skip) || pkg.startsWith(skip + ".")) {
+                return false;
+            }
+        }
+        for (String prefix : NETEASE_PREFIXES) {
+            if (pkg.startsWith(prefix)) {
                 return true;
             }
         }
