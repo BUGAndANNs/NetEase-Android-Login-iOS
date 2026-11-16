@@ -1,0 +1,149 @@
+package cn.ratwl.androidloginios.bridge;
+
+import java.util.Locale;
+
+/**
+ * 在目标游戏的 GMWebviewActivity 内部执行的桥接页。
+ * <p>移植自 netease-ios 的 BridgePage：页面只做三件事——读取当前登录账号、
+ * 请求写入 iOS 准备种子、把 SDK 结果回传给本地回环服务。</p>
+ */
+final class BridgePage {
+
+    private static final String GUIDANCE =
+            "请返回游戏点「切换账号」重登（若弹窗原本已打开，先点右上角「×」重开）。";
+
+    private BridgePage() {
+    }
+
+    static String render(String appLabel, String base) {
+        String badgeText = escapeHtml("网易 iOS 登录桥接 · " + appLabel);
+
+        StringBuilder sb = new StringBuilder(9000);
+        sb.append("""
+<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:#f4f7fc;color:#14213d;font:16px/1.6 -apple-system,BlinkMacSystemFont,sans-serif;padding:20px;box-sizing:border-box}
+.card{max-width:420px;width:100%;background:#fff;border-radius:20px;padding:28px 24px;box-shadow:0 12px 32px rgba(20,33,61,.08);border:1px solid rgba(36,99,235,.10)}
+.badge{display:inline-block;padding:4px 12px;border-radius:999px;background:#eef4ff;color:#2457c5;font-size:12px;font-weight:600;margin-bottom:12px}
+h2{margin:0 0 10px;font-size:22px;color:#0f172a}
+#status{margin:0 0 14px;color:#475569;font-size:15px}
+.warn{margin:0 0 20px;padding:12px 14px;border-radius:12px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:13.5px;line-height:1.55;font-weight:600}
+button{appearance:none;border:0;border-radius:12px;background:#1e3a8a;color:#fff;font-size:15px;font-weight:600;padding:12px 20px;width:100%;cursor:pointer}
+</style></head><body>
+<div class="card">
+<span class="badge">""").append(badgeText).append("""
+</span>
+<h2>准备 iOS 登录</h2>
+<p id="status">正在读取当前账号…</p>
+<div class="warn">回游戏点「切换账号」重登即可；若弹窗此前已打开，请先点右上角「×」重开，切勿直接点旧列表！</div>
+<button onclick="window.ntesBridgeClose()">返回游戏</button>
+</div>
+<script>
+(function(){
+console.log=function(){};
+window.ntesBridgeClose=userClose;
+var complete=false,sending=false,tries=0,importing=false;
+var base=""").append(quote(base)).append("""
+;
+function show(s){document.getElementById('status').textContent=s;}
+function closePage(){AndroidJSBridge.postMsgToNative(JSON.stringify({methodId:'navigation_bar_func',reqData:{methodId:'close',action:'close'}}));}
+function userClose(){if(importing&&!complete){finishImport(false);return;}closePage();}
+function post(route,j){return fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)}).then(function(r){if(!r.ok)throw Error();return r.json();});}
+function fail(reason,text){if(complete)return;complete=true;show(text);post('/failed',{reason:reason}).catch(function(){});}
+function finishImport(confirmed){
+if(complete)return;
+complete=true;
+show(confirmed?'SDK 已接受登录准备。':'请求已发送，但未收到 SDK 确认，请在游戏中核对结果。');
+post('/submitted',{confirmed:confirmed}).then(function(){show(""").append(quote(GUIDANCE)).append("""
+);setTimeout(closePage,250);}).catch(function(){show('请返回游戏核对登录结果。');});
+}
+function receiveImport(raw){
+if(complete||!importing)return;
+try{
+var j=typeof raw==='string'?JSON.parse(raw):raw;
+if(!j)return;
+if(j.errCode===0||j.errCode==='0'){finishImport(true);return;}
+if(j.errCode!==undefined&&Number(j.errCode)!==0){
+var m=String(j.errMsg||'');
+fail(m==='File content is empty'?'sdk_read_failed':m==='No valid login info found'?'sdk_invalid_session':'sdk_rejected','SDK 未接受本次准备，请返回助手查看结果。');
+}
+}catch(e){}
+}
+function receive(raw){
+if(complete||sending||importing)return;
+try{
+var j=typeof raw==='string'?JSON.parse(raw):raw;
+if(!j||j.executed_methodId!=='gameContextInfo')return;
+sending=true;
+show('已读取当前账号，正在注入 iOS 登录准备…');
+post('/prepare',{full:String(j.user_name||''),game:String(j.game_id||''),channel:String(j.app_channel||'')}).then(function(v){
+if(complete)return;
+if(!v.ok||!v.command){var r=String(v.reason||'prepare_failed');fail(r,r==='not_logged_in'?'未检测到已登录账号，请先在游戏内登录一次。':'准备文件写入未完成，请返回助手查看原因。');return;}
+importing=true;
+var cmd=v.command;
+cmd.callback={nativeCallback:receiveImport};
+window.postMsgToNative(cmd);
+show('等待 SDK 接受登录准备（也可直接点下方返回游戏）…');
+setTimeout(function(){finishImport(false);},12000);
+}).catch(function(){fail('request_failed','操作未完成，请返回助手重试。');}).finally(function(){sending=false;});
+raw=null;j=null;
+}catch(e){fail('invalid_response','游戏客户端返回格式不兼容，请返回助手。');}
+}
+function start(){
+if(complete||importing)return;
+if(typeof window.postMsgToNative!=='function'||!window.NTCallBackList){
+if(++tries<30)setTimeout(start,250);
+else fail('bridge_missing','连接未就绪，请先打开游戏登录一次。');
+return;
+}
+window.postMsgToNative({methodId:'execute_extend_func',reqData:{methodId:'gameContextInfo',callback_mode:'web'},callback:{nativeCallback:receive}});
+if(++tries<8)setTimeout(start,900);
+else setTimeout(function(){if(!complete&&!importing)fail('no_callback','未收到游戏接口响应，请返回助手重试。');},1800);
+}
+window.addEventListener('load',function(){setTimeout(start,700);});
+})();
+</script></body></html>
+""");
+        return sb.toString();
+    }
+
+    private static String escapeHtml(String value) {
+        if (value == null) {
+            return "";
+        }
+        StringBuilder sb = new StringBuilder(value.length() + 8);
+        for (int i = 0; i < value.length(); i++) {
+            char c = value.charAt(i);
+            switch (c) {
+                case '&' -> sb.append("&amp;");
+                case '<' -> sb.append("&lt;");
+                case '>' -> sb.append("&gt;");
+                case '"' -> sb.append("&quot;");
+                case '\'' -> sb.append("&#39;");
+                default -> sb.append(c);
+            }
+        }
+        return sb.toString();
+    }
+
+    static String quote(String value) {
+        StringBuilder sb = new StringBuilder(value == null ? 8 : value.length() + 8);
+        sb.append('"');
+        if (value != null) {
+            for (int i = 0; i < value.length(); i++) {
+                char c = value.charAt(i);
+                if (c == '"' || c == '\\') {
+                    sb.append('\\').append(c);
+                } else if (c < 32 || c == '<' || c == '>' || c == '&'
+                        || c == '\u2028' || c == '\u2029') {
+                    sb.append(String.format(Locale.ROOT, "\\u%04x", (int) c));
+                } else {
+                    sb.append(c);
+                }
+            }
+        }
+        sb.append('"');
+        return sb.toString();
+    }
+}

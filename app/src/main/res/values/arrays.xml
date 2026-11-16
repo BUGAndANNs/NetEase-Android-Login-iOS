@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 框架推荐的默认作用域：两款游戏本体 + 已知会把游戏装进自己进程的多开/虚拟空间宿主 -->
+    <string-array name="xposed_scope">
+        <item>com.netease.sky</item>
+        <item>com.netease.dwrg</item>
+        <!-- Dual Space 多开空间 -->
+        <item>com.xunijun.app.gp</item>
+        <!-- 元萝卜（Katana） -->
+        <item>top.bienvenido.saas.i18n</item>
+    </string-array>
+</resources>

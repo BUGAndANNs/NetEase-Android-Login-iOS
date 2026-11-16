@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- 纯平台主题：不依赖 Material Components / AppCompat，避免把 4MB+ 的库打进模块 -->
+    <style name="Theme.AndroidLoginIOS" parent="android:Theme.Material.Light.NoActionBar">
+        <item name="android:windowBackground">@color/page_background</item>
+        <item name="android:windowLightStatusBar">true</item>
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowDrawsSystemBarBackgrounds">true</item>
+    </style>
+</resources>

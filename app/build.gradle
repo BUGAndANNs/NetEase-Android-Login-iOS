@@ -1,0 +1,70 @@
+plugins {
+    alias(libs.plugins.android.application)
+}
+
+// 可选：通过环境变量注入发布签名；未配置时回退到 debug 签名，保证产物可直接安装。
+def ksFile = System.getenv("RELEASE_STORE_FILE")
+def ksStorePass = System.getenv("RELEASE_STORE_PASSWORD")
+def ksAlias = System.getenv("RELEASE_KEY_ALIAS")
+def ksKeyPass = System.getenv("RELEASE_KEY_PASSWORD")
+def hasReleaseKeystore = ksFile && ksStorePass && ksAlias && ksKeyPass
+
+android {
+    namespace 'cn.ratwl.androidloginios'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId "cn.ratwl.androidloginios"
+        minSdk 26
+        targetSdk 36
+        versionCode 23
+        versionName "5.18"
+    }
+
+    signingConfigs {
+        if (hasReleaseKeystore) {
+            release {
+                storeFile file(ksFile)
+                storePassword ksStorePass
+                keyAlias ksAlias
+                keyPassword ksKeyPass
+            }
+        }
+    }
+
+    buildTypes {
+        debug {
+            minifyEnabled false
+        }
+        release {
+            // 必须关掉 R8 混淆：容器（元萝卜 / PineXposed）会把模块的 dex 加载进**宿主** ClassLoader，
+            // 混淆后的单字母类名（如 core.HookConfig -> "q"）会和容器自己的类撞名，
+            // 运行时解析到容器那一份，直接 NoSuchMethodError。体积代价可忽略（< 300KB）。
+            minifyEnabled false
+            shrinkResources false
+            proguardFiles getDefaultProguardFile('proguard-android-optimize.txt'), 'proguard-rules.pro'
+            signingConfig hasReleaseKeystore ? signingConfigs.release : signingConfigs.debug
+        }
+    }
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+    buildFeatures {
+        buildConfig false
+    }
+    packaging {
+        resources {
+            excludes += ['META-INF/LICENSE*', 'META-INF/NOTICE*', 'META-INF/*.version', 'META-INF/*.kotlin_module']
+        }
+    }
+    lint {
+        abortOnError false
+        checkReleaseBuilds false
+    }
+}
+
+dependencies {
+    // 全部为编译期依赖：模块本身在宿主（游戏）进程里运行，Xposed API 由框架提供
+    compileOnly files('libs/XposedBridgeAPI-82.jar')
+}
