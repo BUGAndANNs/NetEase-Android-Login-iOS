@@ -18,15 +18,29 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  * <p>
  * <b>本工程的口径分两套，按设备环境自动切换：</b>
  * <ul>
- *   <li><b>面具直连</b>（真机 + 面具，见 {@link DeviceEnv#mode()}）：模块被直接注入游戏进程，
- *       此时按 {@code com.netease.*} 放行，<b>所有网易游戏都能用</b>——这一段与
- *       {@code Naptila/netease-mumu} 的做法一致（它压根不做门禁）。非游戏类网易应用
+ *   <li><b>面具直连</b>（有面具 / root，<b>真机与模拟器都算</b>，见 {@link DeviceEnv#mode()}）：
+ *       模块被直接注入游戏进程，此时按 {@code com.netease.*} 放行，<b>所有网易游戏都能用</b>
+ *       ——这一段与 {@code Naptila/netease-mumu} 的做法一致（它压根不做门禁）。非游戏类网易应用
  *       在 {@link #NON_GAME_PACKAGES} 里排除掉，避免给网易云音乐之类改 {@code ro.build.id}。</li>
- *   <li><b>框架限定</b>（其余情况，含所有免 ROOT 容器）：只适配《光·遇》《第五人格》两款，
+ *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只适配《光·遇》《第五人格》两款，
  *       走两款精确包名 + 容器包名前缀两条路。</li>
  * </ul>
  * 容器前缀那一支<b>永远</b>走限定：宿主进程里 guest 包名被抹掉，一旦放大范围就等于
  * 给容器宿主的每个进程都装一遍 hook，得不偿失。
+ *
+ * <p><b>「全量」不等于「每款都做了适配」，这里必须分清：</b>全量放行时装进去的 hook 是两层——
+ * <ul>
+ *   <li><b>通用层</b>：{@link SystemHook} 的 {@code ro.build.id = V417IR} 与
+ *       {@link ChannelHook} 的渠道反射。它<b>不依赖任何游戏内部字段</b>，只把运行环境改得像 MuMu，
+ *       让游戏自己去判渠道。{@code netease-mumu} 的全部实现就是这一层，所以任何网易游戏都吃得到。</li>
+ *   <li><b>逐游戏层</b>：{@link JsonHook} 的 {@code select_platform} 与 {@link PlatformHook}
+ *       的平台值。这两处改的是<b>游戏内部的业务字段</b>，字段名、取值、所在类每款游戏都不同——
+ *       光·遇是「自选三端」、第五人格是「PC」，别的游戏大概率对不上。对不上时类找不到就跳过、
+ *       字段不存在就静默失败，<b>不崩、也不会误改</b>。</li>
+ * </ul>
+ * 所以「只适配两款」不是因为模块只能跑两款，而是因为<b>只有这两款的三端字段被实测确认过</b>。
+ * 而免 ROOT 容器里连通用层都不成立：guest 进程冒充不了 MuMu，且部分容器引擎在 Android 16/17 上
+ * 整体失效——这才是容器必须走限定的原因。
  */
 public class XposedEntry implements IXposedHookLoadPackage {
 
@@ -86,7 +100,7 @@ public class XposedEntry implements IXposedHookLoadPackage {
         if ("cn.ratwl.androidloginios".equals(lpparam.packageName)) {
             return;
         }
-        // 运行模式：真机 + 面具 → 直连全量；其余（含所有免 ROOT 容器）→ 限定两款。
+        // 运行模式：有面具 → 直连全量（真机 / 模拟器一视同仁）；没有面具 → 限定两款。
         // DeviceEnv 只看文件与 Build 字段，不会弹授权框、不会拖慢启动。
         final boolean direct = DeviceEnv.mode() == DeviceEnv.Mode.ROOT;
         if (!looksLikeTarget(lpparam, direct)) {
@@ -223,7 +237,7 @@ public class XposedEntry implements IXposedHookLoadPackage {
                 return true;
             }
         }
-        // 面具直连：真机 + 面具时按网易游戏包名放行（与 netease-mumu 的「不设门禁」等价，
+        // 面具直连：有面具时按网易游戏包名放行（与 netease-mumu 的「不设门禁」等价，
         // 这里多做了两层过滤：只认网易游戏前缀 + 显式排除非游戏类网易应用）
         return direct && isNeteaseGame(pkg);
     }

@@ -12,11 +12,17 @@ import java.util.Locale;
  *
  * <p>用途只有一个：决定模块<b>走哪一套门禁</b>。</p>
  * <ul>
- *   <li><b>面具直连</b>（真机 + 面具）：模块被 LSPosed 直接注入游戏进程，此时按
- *       {@code com.netease.*} 放行，所有网易游戏都能用，与 {@code Naptila/netease-mumu}
- *       的做法一致；</li>
- *   <li><b>框架限定</b>（其余情况，含所有免 ROOT 容器）：只认已验证的两款游戏。</li>
+ *   <li><b>面具直连</b>（有面具 / root，<b>真机与模拟器都算</b>）：模块被 LSPosed 直接注入
+ *       游戏进程，此时按 {@code com.netease.*} 放行，所有网易游戏都能用，与
+ *       {@code Naptila/netease-mumu} 的做法一致；</li>
+ *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只认已验证的两款游戏。</li>
  * </ul>
+ *
+ * <p><b>为什么不排除模拟器：</b>早先这里多写过一条 {@code !isEmulator()}，理由是「在 MuMu 里
+ * 冒充 MuMu 没意义」。但这个理由只在 MuMu 本体上成立——雷电、BlueStacks、AOSP 这些模拟器跑的
+ * 仍是安卓版游戏、上报的仍是安卓渠道，冒充 MuMu 一样能放出三端选择；给模拟器装 Magisk +
+ * LSPosed 也本来就是常见玩法。所以判据只留一条：<b>有没有面具</b>。模拟器信息仍会被
+ * {@link #describe} 显示出来，但只作提示、不参与分流。</p>
  *
  * <p><b>为什么要分两套口径：</b>{@link #mode()} 会被注入进游戏进程的 hook 层调用，所以它
  * 只看文件系统与 {@code Build} 字段——绝不 {@code exec}、绝不碰 {@code Context}、绝不弹授权框。
@@ -30,8 +36,8 @@ public final class DeviceEnv {
 
     /** 模块的运行模式。 */
     public enum Mode {
-        /** 真机 + 面具：直连注入，按网易游戏包名全量放行。 */
-        ROOT("面具直连", "真机 + 面具，所有网易游戏都可用"),
+        /** 有面具：直连注入，按网易游戏包名全量放行（真机 / 模拟器都一样）。 */
+        ROOT("面具直连", "有面具，所有网易游戏都可用"),
         /** 未检测到面具：走免 ROOT 框架，只对已验证的两款游戏注入。 */
         FRAMEWORK("框架限定", "未检测到面具，仅《光·遇》《第五人格》生效");
 
@@ -213,7 +219,9 @@ public final class DeviceEnv {
     /** 当前该走哪套门禁；有 {@code Context} 时把「装了面具管理器」也算作 root 证据。 */
     public static Mode mode(Context context) {
         boolean rooted = isRooted() || hasManagerApp(context);
-        return rooted && !isEmulator() ? Mode.ROOT : Mode.FRAMEWORK;
+        // 判据只有一条：有没有面具。真机、模拟器一视同仁——模拟器里跑的是安卓版游戏，
+        // 冒充 MuMu 一样能放出三端选择；容器宿主由 XposedEntry 前置拦截，不会走到这里的放行。
+        return rooted ? Mode.ROOT : Mode.FRAMEWORK;
     }
 
     /** 面具管理器是否装着（需要包可见性；本工程有 QUERY_ALL_PACKAGES）。 */
@@ -246,13 +254,12 @@ public final class DeviceEnv {
     /** 为什么落到这个模式，一句话说明（界面显示用）。 */
     public static String explain(Context context) {
         boolean rooted = isRooted() || hasManagerApp(context);
-        if (rooted && !isEmulator()) {
-            return "真机 + 面具：网易游戏全量放行";
+        if (rooted) {
+            return isEmulator()
+                    ? "模拟器 + 面具：网易游戏全量放行"
+                    : "真机 + 面具：网易游戏全量放行";
         }
-        if (isEmulator()) {
-            return rooted ? "模拟器（有 root 也只走限定）" : "模拟器环境：只认两款";
-        }
-        return "未检测到面具：只认两款";
+        return isEmulator() ? "模拟器但无面具：只认两款" : "未检测到面具：只认两款";
     }
 
     /** 调试用：把判定依据全打出来。 */

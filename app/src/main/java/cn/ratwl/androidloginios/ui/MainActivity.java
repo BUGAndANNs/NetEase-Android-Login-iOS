@@ -498,7 +498,7 @@ public class MainActivity extends Activity {
         card.addView(UiKit.spacer(this, 10));
 
         card.addView(warnBox(wide
-                ? "面具直连：模块对所有网易游戏生效，非游戏类网易应用已排除"
+                ? "面具直连：所有网易游戏都会注入（通用 MuMu 伪装）；三端选择仅下方两款已验证"
                 : "仅《光·遇》《第五人格》会注入模块，请勿在其它应用上启用本模块"));
         card.addView(UiKit.spacer(this, 8));
         card.addView(UiKit.text(this,
@@ -768,9 +768,8 @@ public class MainActivity extends Activity {
         help.addView(UiKit.spacer(this, 8));
         help.addView(UiKit.text(this,
                 "当前运行模式：" + mode.label + "（" + DeviceEnv.describe(this) + "）\n\n"
-                        + "① 面具 + LSPosed（免 ROOT 里最彻底的一条）：启用模块 → "
-                        + "勾选要用的游戏 → 强制停止再启动。面具下模块按网易游戏包名全量生效，"
-                        + "不需要额外容器。\n\n"
+                        + "① 面具 + LSPosed（最彻底的一条）：启用模块 → 勾选要用的游戏 → "
+                        + "强制停止再启动。只要有面具就全量生效，真机、模拟器都一样，不需要额外容器。\n\n"
                         + "② 免 ROOT · 推荐 Dual Space：把模块和游戏都装进空间 → 长按游戏 → "
                         + "「管理插件」→ 启用本模块 → 作用域选「当前应用」→ 启动游戏。"
                         + "已在 Dual Space 1.94 + Android 16/17 实测可用。\n\n"
@@ -779,8 +778,9 @@ public class MainActivity extends Activity {
                         + "模块做的事：把游戏伪装成 MuMu 模拟器（渠道 + 设备标识），"
                         + "让游戏放出平台选择 / 扫码入口。\n\n"
                         + (mode == DeviceEnv.Mode.ROOT
-                        ? "面具直连模式：所有网易游戏都会被注入；网易云音乐、网易新闻这类"
-                        + "非游戏应用已在排除表里，不会被注入。\n\n"
+                        ? "面具直连模式：所有网易游戏都会被注入，改的是「MuMu 伪装」这一层"
+                        + "（渠道 + 设备标识），任何网易游戏都吃得到；而「三端自选」属于逐游戏字段，"
+                        + "只有下面两款实测确认过。非游戏类网易应用已在排除表里，不会被注入。\n\n"
                         : "框架限定模式：只有《光·遇》《第五人格》会注入，其它网易应用一律不动。\n\n")
                         + "多开 / 虚拟空间（Dual Space、元萝卜）：游戏跑在宿主进程里，"
                         + "类由沙盒自己的 ClassLoader 加载，模块会在沙盒创建游戏时再注入一次；"
