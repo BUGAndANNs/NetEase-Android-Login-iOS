@@ -4,6 +4,7 @@
     <string-array name="xposed_scope">
         <item>com.netease.sky</item>
         <item>com.netease.dwrg</item>
+        <item>com.netease.tom</item>
         <!-- Dual Space 多开空间 -->
         <item>com.xunijun.app.gp</item>
         <!-- 元萝卜（Katana） -->

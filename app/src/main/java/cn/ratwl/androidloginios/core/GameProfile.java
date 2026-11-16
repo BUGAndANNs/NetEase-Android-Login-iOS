@@ -10,7 +10,7 @@ import java.util.Map;
  *
  * <p>不在表里的包（包括其他网易应用）一律不注入任何 Hook，界面上也必须如实告知用户。</p>
  *
- * <p>两款游戏用的是同一套 MuMu 伪装（渠道 + 设备标识），以后验证过新的网易游戏，
+ * <p>三款游戏用的是同一套 MuMu 伪装（渠道 + 设备标识），以后验证过新的网易游戏，
  * 只要在这里 {@code register} 一行就会同时出现在界面「适配范围」里。</p>
  *
  * <p>只按包名匹配，不绑定任何游戏版本：游戏升级后无需同步改模块，所有版本一视同仁。</p>
@@ -27,9 +27,18 @@ public final class GameProfile {
     public static final GameProfile IDV = new GameProfile(
             "com.netease.dwrg", "第五人格", true, true);
 
+    /**
+     * 猫和老鼠。v5.21 双路实测：面具直连（通用 MuMu 伪装）与 Dual Space 框架均可用。
+     * 登录桥本就不依赖这张表（gameId 自动回填 + GM 桥运行时探测），加进来是为了让
+     * 框架限定注入与「适配范围」卡片也认它。
+     */
+    public static final GameProfile TOM = new GameProfile(
+            "com.netease.tom", "猫和老鼠", true, true);
+
     static {
         register(SKY);
         register(IDV);
+        register(TOM);
     }
 
     public final String packageName;
@@ -51,7 +60,7 @@ public final class GameProfile {
         GAMES.put(profile.packageName, profile);
     }
 
-    /** 已适配的游戏列表（顺序固定：光·遇、第五人格）。 */
+    /** 已适配的游戏列表（顺序固定：光·遇、第五人格、猫和老鼠）。 */
     public static Collection<GameProfile> all() {
         return Collections.unmodifiableCollection(GAMES.values());
     }

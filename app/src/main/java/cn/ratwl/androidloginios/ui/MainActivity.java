@@ -431,7 +431,7 @@ public class MainActivity extends Activity {
     private LinearLayout buildModulePanel() {
         LinearLayout panel = UiKit.column(this);
 
-        // ---- 适配范围：第一位，仅两款游戏 + 本机版本 ----
+        // ---- 适配范围：第一位，各适配游戏 + 本机版本 ----
         scopeBox = UiKit.column(this);
         panel.addView(scopeBox, UiKit.matchWrap());
         panel.addView(UiKit.spacer(this, 12));
@@ -465,7 +465,7 @@ public class MainActivity extends Activity {
     /**
      * 适配范围卡片。
      * <p>第一块是<b>运行环境</b>：真机/模拟器、有没有面具、由此决定的运行模式。
-     * 面具直连时模块按网易游戏包名全量放行；框架（Dual Space 等）下只认下面这两款。</p>
+     * 面具直连时模块按网易游戏包名全量放行；框架（Dual Space 等）下只认下面列出的这几款。</p>
      */
     private void renderScopeCard() {
         if (scopeBox == null) {
@@ -498,8 +498,8 @@ public class MainActivity extends Activity {
         card.addView(UiKit.spacer(this, 10));
 
         card.addView(warnBox(wide
-                ? "面具直连：所有网易游戏都会注入（通用 MuMu 伪装）；三端选择仅下方两款已验证"
-                : "仅《光·遇》《第五人格》会注入模块，请勿在其它应用上启用本模块"));
+                ? "面具直连：所有网易游戏都会注入（通用 MuMu 伪装）；三端选择仅《光·遇》《第五人格》已验证"
+                : "仅《光·遇》《第五人格》《猫和老鼠》会注入模块，请勿在其它应用上启用本模块"));
         card.addView(UiKit.spacer(this, 8));
         card.addView(UiKit.text(this,
                 "「一键准备 iOS 登录」不受这里限制：任意开放网页桥接口的网易官服游戏都能在本页直接准备。",
@@ -780,8 +780,9 @@ public class MainActivity extends Activity {
                         + (mode == DeviceEnv.Mode.ROOT
                         ? "面具直连模式：所有网易游戏都会被注入，改的是「MuMu 伪装」这一层"
                         + "（渠道 + 设备标识），任何网易游戏都吃得到；而「三端自选」属于逐游戏字段，"
-                        + "只有下面两款实测确认过。非游戏类网易应用已在排除表里，不会被注入。\n\n"
-                        : "框架限定模式：只有《光·遇》《第五人格》会注入，其它网易应用一律不动。\n\n")
+                        + "只有《光·遇》《第五人格》实测确认过。非游戏类网易应用已在排除表里，不会被注入。\n\n"
+                        : "框架限定模式：只有《光·遇》《第五人格》《猫和老鼠》会注入，"
+                        + "其它网易应用一律不动。猫和老鼠 v5.21 在 Dual Space 实测可用。\n\n")
                         + "多开 / 虚拟空间（Dual Space、元萝卜）：游戏跑在宿主进程里，"
                         + "类由沙盒自己的 ClassLoader 加载，模块会在沙盒创建游戏时再注入一次；"
                         + "前提是模块也被装进了沙盒（并勾选宿主作用域）。克隆空间建议先清一次游戏数据，"

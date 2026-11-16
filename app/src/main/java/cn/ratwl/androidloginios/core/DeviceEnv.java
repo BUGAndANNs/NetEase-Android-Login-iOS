@@ -15,7 +15,7 @@ import java.util.Locale;
  *   <li><b>面具直连</b>（有面具 / root，<b>真机与模拟器都算</b>）：模块被 LSPosed 直接注入
  *       游戏进程，此时按 {@code com.netease.*} 放行，所有网易游戏都能用，与
  *       {@code Naptila/netease-mumu} 的做法一致；</li>
- *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只认已验证的两款游戏。</li>
+ *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只认已验证的三款游戏。</li>
  * </ul>
  *
  * <p><b>为什么不排除模拟器：</b>早先这里多写过一条 {@code !isEmulator()}，理由是「在 MuMu 里
@@ -38,8 +38,8 @@ public final class DeviceEnv {
     public enum Mode {
         /** 有面具：直连注入，按网易游戏包名全量放行（真机 / 模拟器都一样）。 */
         ROOT("面具直连", "有面具，所有网易游戏都可用"),
-        /** 未检测到面具：走免 ROOT 框架，只对已验证的两款游戏注入。 */
-        FRAMEWORK("框架限定", "未检测到面具，仅《光·遇》《第五人格》生效");
+        /** 未检测到面具：走免 ROOT 框架，只对已验证的三款游戏注入。 */
+        FRAMEWORK("框架限定", "未检测到面具，仅《光·遇》《第五人格》《猫和老鼠》生效");
 
         public final String label;
         public final String desc;
@@ -259,7 +259,7 @@ public final class DeviceEnv {
                     ? "模拟器 + 面具：网易游戏全量放行"
                     : "真机 + 面具：网易游戏全量放行";
         }
-        return isEmulator() ? "模拟器但无面具：只认两款" : "未检测到面具：只认两款";
+        return isEmulator() ? "模拟器但无面具：只认三款" : "未检测到面具：只认三款";
     }
 
     /** 调试用：把判定依据全打出来。 */

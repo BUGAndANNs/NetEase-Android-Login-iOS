@@ -22,8 +22,8 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  *       模块被直接注入游戏进程，此时按 {@code com.netease.*} 放行，<b>所有网易游戏都能用</b>
  *       ——这一段与 {@code Naptila/netease-mumu} 的做法一致（它压根不做门禁）。非游戏类网易应用
  *       在 {@link #NON_GAME_PACKAGES} 里排除掉，避免给网易云音乐之类改 {@code ro.build.id}。</li>
- *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只适配《光·遇》《第五人格》两款，
- *       走两款精确包名 + 容器包名前缀两条路。</li>
+ *   <li><b>框架限定</b>（没有面具，含所有免 ROOT 容器）：只适配《光·遇》《第五人格》《猫和老鼠》
+ *       三款，走三款精确包名 + 容器包名前缀两条路。</li>
  * </ul>
  * 容器前缀那一支<b>永远</b>走限定：宿主进程里 guest 包名被抹掉，一旦放大范围就等于
  * 给容器宿主的每个进程都装一遍 hook，得不偿失。
@@ -38,15 +38,17 @@ import de.robv.android.xposed.callbacks.XC_LoadPackage;
  *       光·遇是「自选三端」、第五人格是「PC」，别的游戏大概率对不上。对不上时类找不到就跳过、
  *       字段不存在就静默失败，<b>不崩、也不会误改</b>。</li>
  * </ul>
- * 所以「只适配两款」不是因为模块只能跑两款，而是因为<b>只有这两款的三端字段被实测确认过</b>。
+ * 所以「只适配三款」不是因为模块只能跑三款，而是因为<b>只有这三款的注入被实测确认过</b>（其中
+ * 三端自选字段更是只有光·遇、第五人格两款；猫和老鼠靠登录桥 + 通用伪装生效）。
  * 而免 ROOT 容器里连通用层都不成立：guest 进程冒充不了 MuMu，且部分容器引擎在 Android 16/17 上
  * 整体失效——这才是容器必须走限定的原因。
  */
 public class XposedEntry implements IXposedHookLoadPackage {
 
-    /** 适配范围内的两款游戏。 */
+    /** 适配范围内的三款游戏。 */
     private static final String PKG_SKY = "com.netease.sky";   // 光·遇
     private static final String PKG_DWRG = "com.netease.dwrg"; // 第五人格
+    private static final String PKG_TOM = "com.netease.tom";   // 猫和老鼠
 
     /** 面具直连模式下按这些前缀放行（网易游戏发行用的两个主前缀）。 */
     private static final String[] NETEASE_PREFIXES = {
@@ -100,7 +102,7 @@ public class XposedEntry implements IXposedHookLoadPackage {
         if ("cn.ratwl.androidloginios".equals(lpparam.packageName)) {
             return;
         }
-        // 运行模式：有面具 → 直连全量（真机 / 模拟器一视同仁）；没有面具 → 限定两款。
+        // 运行模式：有面具 → 直连全量（真机 / 模拟器一视同仁）；没有面具 → 限定三款。
         // DeviceEnv 只看文件与 Build 字段，不会弹授权框、不会拖慢启动。
         final boolean direct = DeviceEnv.mode() == DeviceEnv.Mode.ROOT;
         if (!looksLikeTarget(lpparam, direct)) {
@@ -218,16 +220,17 @@ public class XposedEntry implements IXposedHookLoadPackage {
         if (isContainerHost(lpparam)) {
             return "框架限定 · 容器宿主";
         }
-        return "框架限定 · 两款适配";
+        return "框架限定 · 三款适配";
     }
 
     private static boolean looksLikeTarget(XC_LoadPackage.LoadPackageParam lpparam,
                                           boolean direct) {
         String pkg = lpparam.packageName;
         String proc = lpparam.processName == null ? "" : lpparam.processName;
-        // 只认这两款（面具 / LSPosed 下走这条）
-        if (PKG_SKY.equals(pkg) || PKG_DWRG.equals(pkg)
-                || proc.startsWith(PKG_SKY) || proc.startsWith(PKG_DWRG)) {
+        // 只认这三款（框架 / LSPatch 下走这条；猫和老鼠 v5.21 双路实测通过）
+        if (PKG_SKY.equals(pkg) || PKG_DWRG.equals(pkg) || PKG_TOM.equals(pkg)
+                || proc.startsWith(PKG_SKY) || proc.startsWith(PKG_DWRG)
+                || proc.startsWith(PKG_TOM)) {
             return true;
         }
         // 容器里 guest 进程上报的是容器包名，只能按前缀放行。
