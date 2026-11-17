@@ -69,7 +69,7 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
         │
         ├─ 页面 JS 调 gameContextInfo，拿到当前登录账号 UID 与 game_id
         │
-        ├─ App 生成种子：token 为空、need_mask=true、src_client_type=2(iOS)
+        ├─ App 生成种子：token 为占位符 "0"、need_mask=true、src_client_type=2(iOS)
         │      写入 <包名>.widget_file_provider 缓存，或 SAF 的 Android/media/<包名>
         │
         └─ 回包给页面，JS 调 execute_extend_func → loadMpaySession(path)
@@ -81,12 +81,12 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
 - 只监听 `127.0.0.1`，随机端口；路径带 24 字节随机 nonce。
 - 校验 `Host` 与 `Origin`，不匹配直接 403。
 - 45 秒未完成自动销毁，完成后立即关闭，种子文件定时清理。
-- 种子 `token` 为空串——**从不接触密码、验证码、真实登录 token**。
+- 种子 `token` 为占位符 `"0"`（对齐上游 v1.3：较新 MPay SDK 拒绝空 token）——**从不接触密码、验证码、真实登录 token**。
 
 ### 种子内容
 
 ```json
-{"user":{"id":"<UID>","token":"","need_mask":true,"login_type":1,
+{"user":{"id":"<UID>","token":"0","need_mask":true,"login_type":1,
          "login_channel":"netease",
          "pc_ext_info":{"src_client_type":2,"is_remember":true,"is_from_ticket_login":true}}}
 ```
@@ -494,7 +494,7 @@ app/src/main/
 
 ### 1. iOS 登录部分：`Naptila/netease-ios`（代码移植）
 
-本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.2** 对齐（含 `is_remember` 字段）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
+本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.3** 对齐（含 v1.2 的 `is_remember` 字段与 v1.3 的占位 token 修复）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
 
 ### 2. Xposed 模块部分：`Naptila/netease-mumu`（借鉴思路与常量，未复制代码）
 

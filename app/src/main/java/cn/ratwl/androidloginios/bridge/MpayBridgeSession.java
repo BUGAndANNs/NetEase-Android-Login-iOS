@@ -26,8 +26,11 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 单次会话的本地回环 MPay iOS 登录桥。
  *
  * <p>流程：拉起游戏的 GMWebviewActivity 加载本地页面 → 页面读取当前登录账号（UID / game_id）
- * → 写出不含登录凭据（{@code token: ""}）的 iOS 会话种子并调用 {@code loadMpaySession}
+ * → 写出不含登录凭据（token 用占位符 {@code "0"}）的 iOS 会话种子并调用 {@code loadMpaySession}
  * → 用户回游戏点「切换账号」重登同一账号即进入 iOS 角色。</p>
+ *
+ * <p><b>为什么 token 是 {@code "0"} 而不是空串</b>：对齐上游 netease-ios v1.3——较新的 MPay SDK
+ * 会拒绝空 token 的会话种子，占位符 {@code "0"} 可以通过校验；它同样不是真实凭据。</p>
  *
  * <p>全程不接触密码、验证码或真实 token；本地服务仅绑定 127.0.0.1，端口随机，
  * 路径带一次性 24 字节 nonce，并校验 Host / Origin，45 秒后自动销毁。</p>
@@ -351,7 +354,7 @@ public final class MpayBridgeSession implements AutoCloseable {
             extInfo.put("is_from_ticket_login", true);
             JSONObject user = new JSONObject();
             user.put("id", uid);
-            user.put("token", "");
+            user.put("token", "0");
             user.put("need_mask", true);
             user.put("login_type", BridgeProtocol.DEFAULT_LOGIN_TYPE);
             user.put("login_channel", BridgeProtocol.DEFAULT_LOGIN_CHANNEL);
