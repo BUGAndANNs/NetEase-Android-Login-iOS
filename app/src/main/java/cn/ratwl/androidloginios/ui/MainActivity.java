@@ -62,6 +62,7 @@ public class MainActivity extends Activity {
     private String message = "请先选择目标网易游戏。";
     private StatusTone tone = StatusTone.NEUTRAL;
     private SeedTransportMode transportMode = SeedTransportMode.STANDARD;
+    private boolean nonEmptyToken;
     private boolean safAuthorized;
     private boolean submittedCurrent;
     private boolean unconfirmedCurrent;
@@ -82,6 +83,8 @@ public class MainActivity extends Activity {
     private LinearLayout safRow;
     private TextView safLabel;
     private TextView safActionButton;
+    private LinearLayout tokenRow;
+    private ToggleView tokenToggle;
     private TextView prepareButton;
     private LinearLayout scopeBox;
     private LinearLayout versionBox;
@@ -361,6 +364,24 @@ public class MainActivity extends Activity {
         card.addView(UiKit.spacer(this, 8));
         card.addView(safRow, UiKit.matchWrap());
 
+        // 非空占位凭证开关：默认关闭，按游戏独立记忆（对齐上游 v1.3.1）
+        tokenRow = UiKit.row(this, Gravity.CENTER_VERTICAL);
+        tokenRow.setBackground(UiKit.stroked(this, p.cardAlt, p.outline, 13f, 1f));
+        tokenRow.setPadding(UiKit.dp(this, 11), UiKit.dp(this, 8),
+                UiKit.dp(this, 11), UiKit.dp(this, 8));
+        LinearLayout tokenText = UiKit.column(this);
+        tokenText.addView(UiKit.text(this, "非空占位凭证（新版阴阳师适用）",
+                12.5f, p.text, true));
+        tokenText.addView(UiKit.text(this, "默认关闭；重登仍是安卓号时再开启",
+                10.5f, p.textDim, false));
+        tokenRow.addView(tokenText, UiKit.weightedWrap(1f));
+        tokenToggle = new ToggleView(this, p, false);
+        tokenToggle.setTapEnabled(false); // 点击由整行统一处理，避免开关与行双触发抵消
+        tokenRow.setOnClickListener(v -> toggleNonEmptyToken(!nonEmptyToken));
+        tokenRow.addView(tokenToggle);
+        card.addView(UiKit.spacer(this, 8));
+        card.addView(tokenRow, UiKit.matchWrap());
+
         card.addView(UiKit.spacer(this, 14));
 
         prepareButton = UiKit.text(this, "一键准备 iOS 登录", 15f, p.onPrimary, true);
@@ -378,7 +399,7 @@ public class MainActivity extends Activity {
 
         card.addView(UiKit.spacer(this, 12));
         card.addView(warnBox("若准备前已点开登录弹窗，回游戏必须先点右上角「×」关闭再重开，"
-                + "直接点旧列表会一直转圈。"), UiKit.matchWrap());
+                + "直接点旧列表会一直转圈或触发 1311 登录失效。"), UiKit.matchWrap());
 
         card.addView(UiKit.spacer(this, 8));
         LinearLayout tips = UiKit.column(this);
@@ -714,6 +735,10 @@ public class MainActivity extends Activity {
     private void renderTransport() {
         styleOption(optionStandard, transportMode == SeedTransportMode.STANDARD);
         styleOption(optionSaf, transportMode == SeedTransportMode.SAF_MEDIA);
+        if (tokenToggle != null) {
+            tokenToggle.setChecked(nonEmptyToken);
+            tokenRow.setAlpha(busy ? 0.55f : 1f);
+        }
         if (safRow != null) {
             safRow.setVisibility(transportMode == SeedTransportMode.SAF_MEDIA
                     ? View.VISIBLE : View.GONE);
@@ -921,6 +946,17 @@ public class MainActivity extends Activity {
         renderGameCard();
     }
 
+    private void toggleNonEmptyToken(boolean enabled) {
+        if (busy) {
+            return;
+        }
+        nonEmptyToken = enabled;
+        if (current != null) {
+            SeedStorage.setNonEmptyTokenEnabled(this, current.packageName(), enabled);
+        }
+        renderTransport();
+    }
+
     private void authorizeDirectory() {
         if (busy) {
             return;
@@ -965,6 +1001,7 @@ public class MainActivity extends Activity {
         }
         final GameSpec spec = current.spec;
         final SeedTransportMode selectedMode = transportMode;
+        final boolean selectedNonEmptyToken = nonEmptyToken;
         setBusy(true);
         showMessage("正在连接「" + spec.displayName + "」准备 iOS 登录…", StatusTone.NEUTRAL);
 
@@ -974,7 +1011,8 @@ public class MainActivity extends Activity {
                 try {
                     final GameTarget target = GameTarget.verify(MainActivity.this, spec);
                     final MpayBridgeSession next = new MpayBridgeSession(MainActivity.this,
-                            target, selectedMode, new MpayBridgeSession.Listener() {
+                            target, selectedMode, selectedNonEmptyToken,
+                            new MpayBridgeSession.Listener() {
                         @Override
                         public void onSubmitted(String gameId, boolean confirmed, boolean usedSaf) {
                             String text = confirmed
@@ -1157,6 +1195,7 @@ public class MainActivity extends Activity {
         unconfirmedCurrent = "unconfirmed".equals(state) && operationMatches;
 
         transportMode = SeedStorage.getTransportMode(this, pkg);
+        nonEmptyToken = SeedStorage.isNonEmptyTokenEnabled(this, pkg);
         safAuthorized = SeedStorage.hasValidDirectoryGrant(this, pkg);
 
         if (!updateMessage || busy) {

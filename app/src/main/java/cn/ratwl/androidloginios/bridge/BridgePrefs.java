@@ -27,6 +27,11 @@ public final class BridgePrefs {
         return "seed_mode_" + packageName;
     }
 
+    /** 按游戏记忆「非空占位凭证」开关（默认关闭，避免 1311 清库）。 */
+    public static String nonEmptyTokenKey(String packageName) {
+        return "seed_non_empty_token_" + packageName;
+    }
+
     public static String mediaTreeKey(String packageName) {
         return "media_tree_" + packageName;
     }

@@ -51,6 +51,18 @@ public final class SeedStorage {
                 .apply();
     }
 
+    /** 非空占位凭证开关，按游戏独立记忆；默认关闭（空 token 触发本地拦截，避免服务端 1311 清库）。 */
+    public static boolean isNonEmptyTokenEnabled(Context context, String packageName) {
+        return BridgePrefs.get(context)
+                .getBoolean(BridgePrefs.nonEmptyTokenKey(packageName), false);
+    }
+
+    public static void setNonEmptyTokenEnabled(Context context, String packageName, boolean enabled) {
+        BridgePrefs.get(context).edit()
+                .putBoolean(BridgePrefs.nonEmptyTokenKey(packageName), enabled)
+                .apply();
+    }
+
     public static boolean hasValidDirectoryGrant(Context context, String packageName) {
         if (!BridgeProtocol.isValidPackageName(packageName)) {
             return false;

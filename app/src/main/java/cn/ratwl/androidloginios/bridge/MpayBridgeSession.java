@@ -26,11 +26,14 @@ import java.util.concurrent.atomic.AtomicBoolean;
  * 单次会话的本地回环 MPay iOS 登录桥。
  *
  * <p>流程：拉起游戏的 GMWebviewActivity 加载本地页面 → 页面读取当前登录账号（UID / game_id）
- * → 写出不含登录凭据（token 用占位符 {@code "0"}）的 iOS 会话种子并调用 {@code loadMpaySession}
+ * → 写出不含真实登录凭据的 iOS 会话种子并调用 {@code loadMpaySession}
  * → 用户回游戏点「切换账号」重登同一账号即进入 iOS 角色。</p>
  *
- * <p><b>为什么 token 是 {@code "0"} 而不是空串</b>：对齐上游 netease-ios v1.3——较新的 MPay SDK
- * 会拒绝空 token 的会话种子，占位符 {@code "0"} 可以通过校验；它同样不是真实凭据。</p>
+ * <p><b>token 策略（对齐上游 netease-ios v1.3.1）</b>：默认空串 {@code ""}——
+ * 光·遇 / 第五人格等游戏的 LoginStore 判 {@code != null}，空串在本地被 {@code TextUtils.isEmpty}
+ * 拦下、不会向服务端发假凭证，从而避免服务端 {@code 1311 (LOGOUT_DEVICE)} 清库；
+ * 仅当用户为某款游戏显式打开「非空占位凭证」（如新版阴阳师 2.8.94+ 的 LoginStore 判非空）时，
+ * 才写占位符 {@code "0"}。占位符同样不是真实凭据。</p>
  *
  * <p>全程不接触密码、验证码或真实 token；本地服务仅绑定 127.0.0.1，端口随机，
  * 路径带一次性 24 字节 nonce，并校验 Host / Origin，45 秒后自动销毁。</p>
@@ -58,6 +61,7 @@ public final class MpayBridgeSession implements AutoCloseable {
     private final String host;
     private final GameTarget target;
     private final SeedTransportMode transportMode;
+    private final boolean nonEmptyToken;
     private final Listener listener;
     private final String expectedGameId;
 
@@ -66,10 +70,12 @@ public final class MpayBridgeSession implements AutoCloseable {
     private volatile boolean unconfirmedGraceDelete = false;
 
     public MpayBridgeSession(Context context, GameTarget target,
-                             SeedTransportMode transportMode, Listener listener) throws Exception {
+                             SeedTransportMode transportMode, boolean nonEmptyToken,
+                             Listener listener) throws Exception {
         this.appContext = context.getApplicationContext();
         this.target = target;
         this.transportMode = transportMode;
+        this.nonEmptyToken = nonEmptyToken;
         this.listener = listener;
         this.expectedGameId = target.spec.gameId;
 
@@ -354,7 +360,7 @@ public final class MpayBridgeSession implements AutoCloseable {
             extInfo.put("is_from_ticket_login", true);
             JSONObject user = new JSONObject();
             user.put("id", uid);
-            user.put("token", "0");
+            user.put("token", nonEmptyToken ? "0" : "");
             user.put("need_mask", true);
             user.put("login_type", BridgeProtocol.DEFAULT_LOGIN_TYPE);
             user.put("login_channel", BridgeProtocol.DEFAULT_LOGIN_CHANNEL);

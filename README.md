@@ -80,7 +80,7 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
         │
         ├─ 页面 JS 调 gameContextInfo，拿到当前登录账号 UID 与 game_id
         │
-        ├─ App 生成种子：token 为占位符 "0"、need_mask=true、src_client_type=2(iOS)
+        ├─ App 生成种子：token 默认 ""、"非空占位凭证"开启时为 "0"、need_mask=true、src_client_type=2(iOS)
         │      写入 <包名>.widget_file_provider 缓存，或 SAF 的 Android/media/<包名>
         │
         └─ 回包给页面，JS 调 execute_extend_func → loadMpaySession(path)
@@ -92,31 +92,34 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
 - 只监听 `127.0.0.1`，随机端口；路径带 24 字节随机 nonce。
 - 校验 `Host` 与 `Origin`，不匹配直接 403。
 - 45 秒未完成自动销毁，完成后立即关闭，种子文件定时清理。
-- 种子 `token` 为占位符 `"0"`（对齐上游 v1.3：较新 MPay SDK 拒绝空 token）——**从不接触密码、验证码、真实登录 token**。
+- 种子 `token` **默认为空串 `""`**（对齐上游 v1.3.1）：光·遇 / 第五人格等游戏的 `LoginStore` 判 `!= null`，空串在本地被 `TextUtils.isEmpty` 拦下、不会向服务端发假凭证，可避免服务端 `1311 (LOGOUT_DEVICE)` 清库。仅当某款游戏准备后重登仍是安卓号（如新版阴阳师 `2.8.94+` 的 `LoginStore` 判非空）时，才在 App 里单独为它打开「非空占位凭证」，写入占位符 `"0"`。占位符同样不是真实凭据，**全程从不接触密码、验证码、真实登录 token**。
 
 ### 种子内容
 
 ```json
-{"user":{"id":"<UID>","token":"0","need_mask":true,"login_type":1,
+{"user":{"id":"<UID>","token":"","need_mask":true,"login_type":1,
          "login_channel":"netease",
          "pc_ext_info":{"src_client_type":2,"is_remember":true,"is_from_ticket_login":true}}}
 ```
 
 `is_remember` 是兼容部分游戏（如决战平安京）渠道识别的必要字段，缺了会导致切换账号后仍退回安卓角色。
 
+`token` 默认空串；只有为该游戏打开「非空占位凭证」开关后才变成 `"0"`。开关状态按游戏包名独立记忆，互不影响。
+
 ### 使用步骤
 
 1. 打开目标游戏，用要切到 iOS 的网易账号**正常登录**，停在主界面。
 2. 回到本 App，选这个游戏（默认只显示网易应用，可关掉筛选）。
 3. 一般游戏用「标准缓存」，阴阳师一类选「共享目录方式（SAF）」并授权一次 `Android/media`。
-4. 点「一键准备 iOS 登录」。
-5. 回游戏点「切换账号」，用**同一个账号**重新登录 → 进入 iOS 角色。
+4. 「非空占位凭证」默认**关闭**——绝大多数游戏保持关闭即可；仅当准备后重登仍是安卓号时，单独为该游戏开启。
+5. 点「一键准备 iOS 登录」。
+6. 回游戏点「切换账号」，用**同一个账号**重新登录 → 进入 iOS 角色。
 
 ![游戏内三端选择界面：iOS / Android / Harmony](docs/screenshots/03-platform.png)
 
 *上图：《光·遇》里出现的三端选择弹窗（截图中的网易游戏标识归版权方所有，仅作功能演示）。*
 
-> **防卡死**：如果准备前你已经点开了「切换账号」弹窗，返回后**不要直接点旧列表条目**（旧会话已失效，会一直转圈）。先点右上角 `×` 关掉，再重新打开列表。
+> **防卡死**：如果准备前你已经点开了「切换账号」弹窗，返回后**不要直接点旧列表条目**（旧会话已失效，会一直转圈或触发 `1311` 登录失效）。先点右上角 `×` 关掉，再重新打开列表。
 
 ### 常见问题
 
@@ -513,7 +516,7 @@ app/src/main/
 
 ### 1. iOS 登录部分：`Naptila/netease-ios`（代码移植）
 
-本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.3** 对齐（含 v1.2 的 `is_remember` 字段与 v1.3 的占位 token 修复）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
+本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.3.1** 对齐（含 v1.2 的 `is_remember` 字段，以及 v1.3.1 的「按游戏独立控制非空占位 token、默认空串以规避 1311 清库」策略）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
 
 ### 2. Xposed 模块部分：`Naptila/netease-mumu`（借鉴思路与常量，未复制代码）
 
