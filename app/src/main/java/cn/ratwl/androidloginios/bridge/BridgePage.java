@@ -28,35 +28,37 @@ body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:c
 .badge{display:inline-block;padding:4px 12px;border-radius:999px;background:#eef4ff;color:#2457c5;font-size:12px;font-weight:600;margin-bottom:12px}
 h2{margin:0 0 10px;font-size:22px;color:#0f172a}
 #status{margin:0 0 14px;color:#475569;font-size:15px}
+#status.err{color:#b91c1c;font-weight:600}
 .warn{margin:0 0 20px;padding:12px 14px;border-radius:12px;background:#fff7ed;border:1px solid #fdba74;color:#9a3412;font-size:13.5px;line-height:1.55;font-weight:600}
 button{appearance:none;border:0;border-radius:12px;background:#1e3a8a;color:#fff;font-size:15px;font-weight:600;padding:12px 20px;width:100%;cursor:pointer}
 </style></head><body>
 <div class="card">
 <span class="badge">""").append(badgeText).append("""
 </span>
-<h2>准备 iOS 登录</h2>
+<h2 id="title">准备 iOS 登录</h2>
 <p id="status">正在读取当前账号…</p>
-<div class="warn">回游戏点「切换账号」重登即可；若弹窗此前已打开，请先点右上角「×」重开，切勿直接点旧列表！</div>
+<div id="warn" class="warn">回游戏点「切换账号」重登即可；若弹窗此前已打开，请先点右上角「×」重开，切勿直接点旧列表！</div>
 <button onclick="window.ntesBridgeClose()">返回游戏</button>
 </div>
 <script>
 (function(){
 console.log=function(){};
 window.ntesBridgeClose=userClose;
-var complete=false,sending=false,tries=0,importing=false;
+var complete=false,gotContext=false,sending=false,tries=0,importing=false;
 var base=""").append(quote(base)).append("""
 ;
 function show(s){document.getElementById('status').textContent=s;}
 function closePage(){AndroidJSBridge.postMsgToNative(JSON.stringify({methodId:'navigation_bar_func',reqData:{methodId:'close',action:'close'}}));}
 function userClose(){if(importing&&!complete){finishImport(false);return;}closePage();}
-function post(route,j){return fetch(base+route,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)}).then(function(r){if(!r.ok)throw Error();return r.json();});}
-function fail(reason,text){if(complete)return;complete=true;show(text);post('/failed',{reason:reason}).catch(function(){});}
+function post(route,j,ms){return new Promise(function(resolve,reject){var done=false,ctrl=typeof AbortController==='function'?new AbortController():null;var timer=ms?setTimeout(function(){if(done)return;done=true;if(ctrl)try{ctrl.abort();}catch(e){}reject(Error('timeout'));},ms):0;var opts={method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(j)};if(ctrl)opts.signal=ctrl.signal;fetch(base+route,opts).then(function(r){if(!r.ok)throw Error('http');return r.json();}).then(function(v){if(done)return;done=true;if(timer)clearTimeout(timer);resolve(v);},function(err){if(done)return;done=true;if(timer)clearTimeout(timer);reject(err);});});}
+function fail(reason,text){if(complete)return;complete=true;document.getElementById('title').textContent='准备未完成';var st=document.getElementById('status');st.className='err';st.textContent=text;var w=document.getElementById('warn');if(w)w.style.display='none';post('/failed',{reason:reason}).catch(function(){});}
 function finishImport(confirmed){
 if(complete)return;
 complete=true;
 show(confirmed?'SDK 已接受登录准备。':'请求已发送，但未收到 SDK 确认，请在游戏中核对结果。');
-post('/submitted',{confirmed:confirmed}).then(function(){show(""").append(quote(GUIDANCE)).append("""
-);setTimeout(closePage,250);}).catch(function(){show('请返回游戏核对登录结果。');});
+post('/submitted',{confirmed:confirmed},1500).then(function(){show(""").append(quote(GUIDANCE)).append("""
+);setTimeout(closePage,250);},function(){show(""").append(quote(GUIDANCE)).append("""
+);setTimeout(closePage,250);});
 }
 function receiveImport(raw){
 if(complete||!importing)return;
@@ -71,27 +73,27 @@ fail(m==='File content is empty'?'sdk_read_failed':m==='No valid login info foun
 }catch(e){}
 }
 function receive(raw){
-if(complete||sending||importing)return;
+if(complete||gotContext||sending||importing)return;
 try{
 var j=typeof raw==='string'?JSON.parse(raw):raw;
 if(!j||j.executed_methodId!=='gameContextInfo')return;
-sending=true;
+gotContext=true;sending=true;
 show('已读取当前账号，正在注入 iOS 登录准备…');
-post('/prepare',{full:String(j.user_name||''),game:String(j.game_id||''),channel:String(j.app_channel||'')}).then(function(v){
-if(complete)return;
-if(!v.ok||!v.command){var r=String(v.reason||'prepare_failed');fail(r,r==='not_logged_in'?'未检测到已登录账号，请先在游戏内登录一次。':'准备文件写入未完成，请返回助手查看原因。');return;}
+post('/prepare',{full:String(j.user_name||''),game:String(j.game_id||''),channel:String(j.app_channel||'')},4000).then(function(v){
+sending=false;if(complete)return;
+if(!v||!v.ok||!v.command){var r=String((v&&v.reason)||'prepare_failed');fail(r,r==='not_logged_in'?'未检测到已登录账号，请先在游戏内登录一次。':'准备文件写入未完成，请返回助手查看原因。');return;}
 importing=true;
 var cmd=v.command;
 cmd.callback={nativeCallback:receiveImport};
 window.postMsgToNative(cmd);
 show('等待 SDK 接受登录准备（也可直接点下方返回游戏）…');
 setTimeout(function(){finishImport(false);},12000);
-}).catch(function(){fail('request_failed','操作未完成，请返回助手重试。');}).finally(function(){sending=false;});
+},function(){sending=false;fail('helper_frozen','助手在后台被系统冻结（或开启了省电模式），未能完成注入。请下拉控制中心关闭省电模式，或在应用信息中将本助手设为「无限制 / 允许后台运行」后返回助手重试。');});
 raw=null;j=null;
 }catch(e){fail('invalid_response','游戏客户端返回格式不兼容，请返回助手。');}
 }
 function start(){
-if(complete||importing)return;
+if(complete||gotContext||sending||importing)return;
 if(typeof window.postMsgToNative!=='function'||!window.NTCallBackList){
 if(++tries<30)setTimeout(start,250);
 else fail('bridge_missing','连接未就绪，请先打开游戏登录一次。');
@@ -99,7 +101,7 @@ return;
 }
 window.postMsgToNative({methodId:'execute_extend_func',reqData:{methodId:'gameContextInfo',callback_mode:'web'},callback:{nativeCallback:receive}});
 if(++tries<8)setTimeout(start,900);
-else setTimeout(function(){if(!complete&&!importing)fail('no_callback','未收到游戏接口响应，请返回助手重试。');},1800);
+else setTimeout(function(){if(!complete&&!gotContext&&!sending&&!importing)fail('no_callback','未收到游戏接口响应，请返回助手重试。');},1800);
 }
 window.addEventListener('load',function(){setTimeout(start,700);});
 })();

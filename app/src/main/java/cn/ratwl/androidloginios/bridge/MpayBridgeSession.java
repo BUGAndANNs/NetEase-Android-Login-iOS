@@ -310,6 +310,9 @@ public final class MpayBridgeSession implements AutoCloseable {
             case "not_logged_in":
                 message = "未读取到已登录的网易账号，请先在「" + target.appLabel + "」正常登录该账号后再试。";
                 break;
+            case "helper_frozen":
+                message = "助手在后台被系统冻结（或开启了省电模式），请关闭省电模式或将本助手设为「无限制 / 允许后台运行」后重试。";
+                break;
             case "no_callback":
                 message = "没有收到游戏接口响应，请返回游戏关闭当前页面后重试。";
                 break;
