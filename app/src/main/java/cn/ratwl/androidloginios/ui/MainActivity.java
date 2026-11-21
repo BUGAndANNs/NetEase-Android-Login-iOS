@@ -7,6 +7,7 @@ import android.content.Context;
 import android.content.Intent;
 import android.content.SharedPreferences;
 import android.graphics.Color;
+import android.graphics.PorterDuff;
 import android.graphics.drawable.Drawable;
 import android.net.Uri;
 import android.os.Bundle;
@@ -27,6 +28,7 @@ import java.util.ArrayList;
 import java.util.List;
 
 import cn.ratwl.androidloginios.ModuleInfo;
+import cn.ratwl.androidloginios.R;
 import cn.ratwl.androidloginios.bridge.BridgePrefs;
 import cn.ratwl.androidloginios.bridge.DirectoryAccessRequired;
 import cn.ratwl.androidloginios.bridge.GameSpec;
@@ -200,9 +202,6 @@ public class MainActivity extends Activity {
         panelModule.setVisibility(View.GONE);
         content.addView(panelModule, UiKit.matchWrap());
 
-        content.addView(UiKit.spacer(this, 14));
-        content.addView(buildFooter(), UiKit.matchWrap());
-
         scroll.addView(content, new ScrollView.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
         root.addView(scroll, new FrameLayout.LayoutParams(
@@ -210,38 +209,57 @@ public class MainActivity extends Activity {
         setContentView(root);
     }
 
-    /** 全页底部：开源仓库入口。放在两个标签页之外，切到哪一页都能看到。 */
-    private View buildFooter() {
-        LinearLayout card = UiKit.card(this, p, 20f);
-        int pad = UiKit.dp(this, 16);
-        card.setPadding(pad, UiKit.dp(this, 12), pad, UiKit.dp(this, 12));
+    /**
+     * 头部链接 chip：GitHub 用主题色、BiliBili 用粉色，样式对齐上游 HeaderLinkChip。
+     * 没有浏览器时退回复制链接，至少让用户能拿到地址。
+     */
+    private View headerLinkChip(String label, int iconRes, int accent, String url) {
+        LinearLayout chip = UiKit.row(this, Gravity.CENTER_VERTICAL);
+        chip.setBackground(UiKit.stroked(this,
+                withAlpha(accent, p.dark ? 0.14f : 0.09f),
+                withAlpha(accent, p.dark ? 0.35f : 0.25f), 12f, 1f));
+        chip.setPadding(UiKit.dp(this, 10), UiKit.dp(this, 7),
+                UiKit.dp(this, 10), UiKit.dp(this, 7));
 
-        LinearLayout row = UiKit.row(this, Gravity.CENTER_VERTICAL);
-        TextView link = UiKit.text(this, "Github", 13.5f, p.primary, true);
-        link.setPadding(0, UiKit.dp(this, 3), 0, UiKit.dp(this, 3));
-        link.setOnClickListener(v -> openGithub());
-        row.addView(link, UiKit.weightedWrap(1f));
-        row.addView(UiKit.text(this, "开源仓库 · GPL-3.0", 10.5f, p.textDim, false));
-        card.addView(row, UiKit.matchWrap());
+        ImageView icon = new ImageView(this);
+        icon.setImageResource(iconRes);
+        icon.setColorFilter(accent, PorterDuff.Mode.SRC_IN);
+        chip.addView(icon, new LinearLayout.LayoutParams(
+                UiKit.dp(this, 15), UiKit.dp(this, 15)));
 
-        TextView url = UiKit.text(this, ModuleInfo.GITHUB_URL, 10f, p.textDim, false);
-        url.setOnClickListener(v -> openGithub());
-        card.addView(url, UiKit.matchWrap());
-        return card;
+        TextView name = UiKit.text(this, label, 12f, p.text, true);
+        name.setSingleLine(true);
+        name.setPadding(UiKit.dp(this, 6), 0, 0, 0);
+        chip.addView(name, UiKit.weightedWrap(1f));
+
+        ImageView external = new ImageView(this);
+        external.setImageResource(R.drawable.ic_open_external);
+        external.setColorFilter(withAlpha(accent, 0.8f), PorterDuff.Mode.SRC_IN);
+        chip.addView(external, new LinearLayout.LayoutParams(
+                UiKit.dp(this, 12), UiKit.dp(this, 12)));
+
+        chip.setOnClickListener(v -> openLink(url, label));
+        return chip;
     }
 
-    /** 打开项目仓库；没有浏览器时退回复制链接，至少让用户能拿到地址。 */
-    private void openGithub() {
+    /** 按给定透明度复制颜色，用于 chip 的浅色底与描边。 */
+    private static int withAlpha(int color, float ratio) {
+        return Color.argb((int) (255 * ratio),
+                Color.red(color), Color.green(color), Color.blue(color));
+    }
+
+    /** 打开外链；没有浏览器时退回剪贴板。 */
+    private void openLink(String url, String label) {
         try {
-            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(ModuleInfo.GITHUB_URL));
+            Intent intent = new Intent(Intent.ACTION_VIEW, Uri.parse(url));
             intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
             startActivity(intent);
         } catch (Throwable t) {
             ClipboardManager clipboard =
                     (ClipboardManager) getSystemService(Context.CLIPBOARD_SERVICE);
             if (clipboard != null) {
-                clipboard.setPrimaryClip(ClipData.newPlainText("Github", ModuleInfo.GITHUB_URL));
-                toast("没有可用浏览器，已复制仓库地址");
+                clipboard.setPrimaryClip(ClipData.newPlainText(label, url));
+                toast("没有可用浏览器，已复制" + label + "地址");
             } else {
                 toast("没有可用浏览器");
             }
@@ -270,6 +288,16 @@ public class MainActivity extends Activity {
                 p.textDim, false));
         titleRow.addView(titleBox, UiKit.weightedWrap(1f));
         card.addView(titleRow, UiKit.matchWrap());
+
+        // 头部双入口：GitHub 开源仓库 + BiliBili 空间（对齐上游 HeaderLinkChip）
+        LinearLayout linkRow = UiKit.row(this, Gravity.CENTER_VERTICAL);
+        linkRow.addView(headerLinkChip("GitHub", R.drawable.ic_github, p.primary,
+                ModuleInfo.GITHUB_URL), UiKit.weightedWrap(1f));
+        linkRow.addView(UiKit.horizontalSpacer(this, 8));
+        linkRow.addView(headerLinkChip("BiliBili", R.drawable.ic_bilibili,
+                p.dark ? 0xFFFF85AD : 0xFFE0487B, ModuleInfo.BILIBILI_URL),
+                UiKit.weightedWrap(1f));
+        card.addView(linkRow, UiKit.matchWrap());
 
         card.addView(UiKit.spacer(this, 13));
 
