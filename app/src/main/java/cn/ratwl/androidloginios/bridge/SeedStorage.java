@@ -63,6 +63,18 @@ public final class SeedStorage {
                 .apply();
     }
 
+    /** 旧版组件记住标记，按游戏独立记忆；默认关闭（新版 MPay 带此标记会被切号列表筛掉）。 */
+    public static boolean isRememberAccountEnabled(Context context, String packageName) {
+        return BridgePrefs.get(context)
+                .getBoolean(BridgePrefs.rememberAccountKey(packageName), false);
+    }
+
+    public static void setRememberAccountEnabled(Context context, String packageName, boolean enabled) {
+        BridgePrefs.get(context).edit()
+                .putBoolean(BridgePrefs.rememberAccountKey(packageName), enabled)
+                .apply();
+    }
+
     public static boolean hasValidDirectoryGrant(Context context, String packageName) {
         if (!BridgeProtocol.isValidPackageName(packageName)) {
             return false;

@@ -62,6 +62,7 @@ public final class MpayBridgeSession implements AutoCloseable {
     private final GameTarget target;
     private final SeedTransportMode transportMode;
     private final boolean nonEmptyToken;
+    private final boolean rememberAccount;
     private final Listener listener;
     private final String expectedGameId;
 
@@ -71,11 +72,12 @@ public final class MpayBridgeSession implements AutoCloseable {
 
     public MpayBridgeSession(Context context, GameTarget target,
                              SeedTransportMode transportMode, boolean nonEmptyToken,
-                             Listener listener) throws Exception {
+                             boolean rememberAccount, Listener listener) throws Exception {
         this.appContext = context.getApplicationContext();
         this.target = target;
         this.transportMode = transportMode;
         this.nonEmptyToken = nonEmptyToken;
+        this.rememberAccount = rememberAccount;
         this.listener = listener;
         this.expectedGameId = target.spec.gameId;
 
@@ -359,8 +361,12 @@ public final class MpayBridgeSession implements AutoCloseable {
         try {
             JSONObject extInfo = new JSONObject();
             extInfo.put("src_client_type", BridgeProtocol.IOS_CLIENT_TYPE);
-            extInfo.put("is_remember", true);
             extInfo.put("is_from_ticket_login", true);
+            // is_remember 默认不写：新版 MPay 服务端 web_token_persist=false 会据此筛掉
+            // 切号列表里的记录；仅旧版 SDK（如决战平安京）需显式开启。对齐上游 v1.3.3。
+            if (rememberAccount) {
+                extInfo.put("is_remember", true);
+            }
             JSONObject user = new JSONObject();
             user.put("id", uid);
             user.put("token", nonEmptyToken ? "0" : "");

@@ -63,6 +63,7 @@ public class MainActivity extends Activity {
     private StatusTone tone = StatusTone.NEUTRAL;
     private SeedTransportMode transportMode = SeedTransportMode.STANDARD;
     private boolean nonEmptyToken;
+    private boolean rememberAccount;
     private boolean safAuthorized;
     private boolean submittedCurrent;
     private boolean unconfirmedCurrent;
@@ -85,6 +86,8 @@ public class MainActivity extends Activity {
     private TextView safActionButton;
     private LinearLayout tokenRow;
     private ToggleView tokenToggle;
+    private LinearLayout rememberRow;
+    private ToggleView rememberToggle;
     private TextView prepareButton;
     private LinearLayout scopeBox;
     private LinearLayout versionBox;
@@ -364,23 +367,20 @@ public class MainActivity extends Activity {
         card.addView(UiKit.spacer(this, 8));
         card.addView(safRow, UiKit.matchWrap());
 
-        // 非空占位凭证开关：默认关闭，按游戏独立记忆（对齐上游 v1.3.1）
-        tokenRow = UiKit.row(this, Gravity.CENTER_VERTICAL);
-        tokenRow.setBackground(UiKit.stroked(this, p.cardAlt, p.outline, 13f, 1f));
-        tokenRow.setPadding(UiKit.dp(this, 11), UiKit.dp(this, 8),
-                UiKit.dp(this, 11), UiKit.dp(this, 8));
-        LinearLayout tokenText = UiKit.column(this);
-        tokenText.addView(UiKit.text(this, "非空占位凭证（新版阴阳师适用）",
-                12.5f, p.text, true));
-        tokenText.addView(UiKit.text(this, "默认关闭；重登仍是安卓号时再开启",
-                10.5f, p.textDim, false));
-        tokenRow.addView(tokenText, UiKit.weightedWrap(1f));
-        tokenToggle = new ToggleView(this, p, false);
-        tokenToggle.setTapEnabled(false); // 点击由整行统一处理，避免开关与行双触发抵消
+        // 兼容开关：默认关闭，按游戏独立记忆（对齐上游 v1.3.1 / v1.3.3）
+        tokenRow = compatibilityRow("非空占位凭证（新版阴阳师适用）",
+                "默认关闭；重登仍是安卓号时再开启");
         tokenRow.setOnClickListener(v -> toggleNonEmptyToken(!nonEmptyToken));
-        tokenRow.addView(tokenToggle);
+        tokenToggle = (ToggleView) tokenRow.getTag();
         card.addView(UiKit.spacer(this, 8));
         card.addView(tokenRow, UiKit.matchWrap());
+
+        rememberRow = compatibilityRow("旧版组件记住标记（决战平安京适用）",
+                "默认关闭；其他游戏开启会导致切号列表隐藏记录需重登");
+        rememberRow.setOnClickListener(v -> toggleRememberAccount(!rememberAccount));
+        rememberToggle = (ToggleView) rememberRow.getTag();
+        card.addView(UiKit.spacer(this, 8));
+        card.addView(rememberRow, UiKit.matchWrap());
 
         card.addView(UiKit.spacer(this, 14));
 
@@ -434,6 +434,23 @@ public class MainActivity extends Activity {
         row.addView(indicator);
 
         row.setOnClickListener(v -> selectTransportMode(value));
+        return row;
+    }
+
+    /** 兼容性开关行：返回的行以 tag 持有开关视图，点击整行即切换。 */
+    private LinearLayout compatibilityRow(String title, String desc) {
+        LinearLayout row = UiKit.row(this, Gravity.CENTER_VERTICAL);
+        row.setBackground(UiKit.stroked(this, p.cardAlt, p.outline, 13f, 1f));
+        row.setPadding(UiKit.dp(this, 11), UiKit.dp(this, 8),
+                UiKit.dp(this, 11), UiKit.dp(this, 8));
+        LinearLayout textBox = UiKit.column(this);
+        textBox.addView(UiKit.text(this, title, 12.5f, p.text, true));
+        textBox.addView(UiKit.text(this, desc, 10.5f, p.textDim, false));
+        row.addView(textBox, UiKit.weightedWrap(1f));
+        ToggleView toggle = new ToggleView(this, p, false);
+        toggle.setTapEnabled(false); // 点击由整行统一处理，避免开关与行双触发抵消
+        row.setTag(toggle);
+        row.addView(toggle);
         return row;
     }
 
@@ -739,6 +756,10 @@ public class MainActivity extends Activity {
             tokenToggle.setChecked(nonEmptyToken);
             tokenRow.setAlpha(busy ? 0.55f : 1f);
         }
+        if (rememberToggle != null) {
+            rememberToggle.setChecked(rememberAccount);
+            rememberRow.setAlpha(busy ? 0.55f : 1f);
+        }
         if (safRow != null) {
             safRow.setVisibility(transportMode == SeedTransportMode.SAF_MEDIA
                     ? View.VISIBLE : View.GONE);
@@ -957,6 +978,17 @@ public class MainActivity extends Activity {
         renderTransport();
     }
 
+    private void toggleRememberAccount(boolean enabled) {
+        if (busy) {
+            return;
+        }
+        rememberAccount = enabled;
+        if (current != null) {
+            SeedStorage.setRememberAccountEnabled(this, current.packageName(), enabled);
+        }
+        renderTransport();
+    }
+
     private void authorizeDirectory() {
         if (busy) {
             return;
@@ -1002,6 +1034,7 @@ public class MainActivity extends Activity {
         final GameSpec spec = current.spec;
         final SeedTransportMode selectedMode = transportMode;
         final boolean selectedNonEmptyToken = nonEmptyToken;
+        final boolean selectedRememberAccount = rememberAccount;
         setBusy(true);
         showMessage("正在连接「" + spec.displayName + "」准备 iOS 登录…", StatusTone.NEUTRAL);
 
@@ -1011,7 +1044,7 @@ public class MainActivity extends Activity {
                 try {
                     final GameTarget target = GameTarget.verify(MainActivity.this, spec);
                     final MpayBridgeSession next = new MpayBridgeSession(MainActivity.this,
-                            target, selectedMode, selectedNonEmptyToken,
+                            target, selectedMode, selectedNonEmptyToken, selectedRememberAccount,
                             new MpayBridgeSession.Listener() {
                         @Override
                         public void onSubmitted(String gameId, boolean confirmed, boolean usedSaf) {
@@ -1196,6 +1229,7 @@ public class MainActivity extends Activity {
 
         transportMode = SeedStorage.getTransportMode(this, pkg);
         nonEmptyToken = SeedStorage.isNonEmptyTokenEnabled(this, pkg);
+        rememberAccount = SeedStorage.isRememberAccountEnabled(this, pkg);
         safAuthorized = SeedStorage.hasValidDirectoryGrant(this, pkg);
 
         if (!updateMessage || busy) {

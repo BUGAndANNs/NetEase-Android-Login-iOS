@@ -80,7 +80,7 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
         │
         ├─ 页面 JS 调 gameContextInfo，拿到当前登录账号 UID 与 game_id
         │
-        ├─ App 生成种子：token 默认 ""、"非空占位凭证"开启时为 "0"、need_mask=true、src_client_type=2(iOS)
+        ├─ App 生成种子：token 默认 ""、need_mask=true、src_client_type=2(iOS)，两个兼容开关按需开启
         │      写入 <包名>.widget_file_provider 缓存，或 SAF 的 Android/media/<包名>
         │
         └─ 回包给页面，JS 调 execute_extend_func → loadMpaySession(path)
@@ -99,19 +99,19 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
 ```json
 {"user":{"id":"<UID>","token":"","need_mask":true,"login_type":1,
          "login_channel":"netease",
-         "pc_ext_info":{"src_client_type":2,"is_remember":true,"is_from_ticket_login":true}}}
+         "pc_ext_info":{"src_client_type":2,"is_from_ticket_login":true}}}
 ```
 
-`is_remember` 是兼容部分游戏（如决战平安京）渠道识别的必要字段，缺了会导致切换账号后仍退回安卓角色。
+`pc_ext_info` 默认只带 `src_client_type=2` 与 `is_from_ticket_login=true`，**不带 `is_remember`**（对齐上游 v1.3.3）：新版 MPay 服务端默认 `web_token_persist=false`，带 `is_remember` 的记录会在点开「切换账号」列表时被筛掉，导致每次切号都要重新登录。仅《决战！平安京》等不识别 `is_from_ticket_login` 的**旧版** MPay 游戏，才需要单独打开「旧版组件记住标记」写入 `is_remember=true`。
 
-`token` 默认空串；只有为该游戏打开「非空占位凭证」开关后才变成 `"0"`。开关状态按游戏包名独立记忆，互不影响。
+`token` 默认空串；只有为该游戏打开「非空占位凭证」开关后才变成 `"0"`。两个开关状态都按游戏包名独立记忆，互不影响。
 
 ### 使用步骤
 
 1. 打开目标游戏，用要切到 iOS 的网易账号**正常登录**，停在主界面。
 2. 回到本 App，选这个游戏（默认只显示网易应用，可关掉筛选）。
 3. 一般游戏用「标准缓存」，阴阳师一类选「共享目录方式（SAF）」并授权一次 `Android/media`。
-4. 「非空占位凭证」默认**关闭**——绝大多数游戏保持关闭即可；仅当准备后重登仍是安卓号时，单独为该游戏开启。
+4. 两个兼容开关默认都**关闭**：绝大多数游戏无需改动；「非空占位凭证」仅在准备后重登仍是安卓号时开启，「旧版组件记住标记」仅决战平安京等旧版游戏开启。
 5. 点「一键准备 iOS 登录」。
 6. 回游戏点「切换账号」，用**同一个账号**重新登录 → 进入 iOS 角色。
 
@@ -131,6 +131,9 @@ App 在本机 127.0.0.1 起一个一次性 HTTP 服务（随机端口 + 24 字�
 
 **Q：提示「SDK 已读取文件，但未接受账号准备格式」？**
 说明这条游戏还没适配种子格式（`sdk_invalid_session`），需要逐个游戏验证。
+
+**Q：每次点「切换账号」列表都找不到刚准备的记录？**
+多半是带了 `is_remember` 被服务端筛掉了（新版 MPay 默认 `web_token_persist=false`）。确认「旧版组件记住标记」开关是关闭的；只有决战平安京这类旧版游戏才需要打开它。
 
 **Q：提示「助手在后台被系统冻结」？**
 桥接页在等待助手写种子时对回环请求加了 4 秒超时。若助手被系统冻结 / 省电模式杀掉后台，本地服务连不上就会给出这条引导（对齐上游 v1.3.2）：下拉控制中心**关闭省电模式**，或在系统设置 → 应用信息里把本助手设为**「无限制 / 允许后台运行」**，再回助手重试一次即可。
@@ -519,7 +522,7 @@ app/src/main/
 
 ### 1. iOS 登录部分：`Naptila/netease-ios`（代码移植）
 
-本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.3.1** 对齐（含 v1.2 的 `is_remember` 字段，以及 v1.3.1 的「按游戏独立控制非空占位 token、默认空串以规避 1311 清库」策略）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
+本项目的 **iOS 登录部分（`bridge/` 包）是 [Naptila/netease-ios](https://github.com/Naptila/netease-ios) 的 Java 移植**：协议常量、种子结构、回环桥、状态机与错误文案均来自该项目，并按上游 **v1.3.3** 对齐（含 v1.3.1 的「按游戏独立控制非空占位 token、默认空串规避 1311 清库」、v1.3.2 的后台冻结检测，以及 v1.3.3 的「`is_remember` 改为按游戏可选、默认关闭」策略）。项目布局与「App 直接当工具用」的产品形态也来源于它。感谢原作者的开源工作。
 
 ### 2. Xposed 模块部分：`Naptila/netease-mumu`（借鉴思路与常量，未复制代码）
 

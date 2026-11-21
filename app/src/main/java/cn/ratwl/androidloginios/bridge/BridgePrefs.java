@@ -32,6 +32,11 @@ public final class BridgePrefs {
         return "seed_non_empty_token_" + packageName;
     }
 
+    /** 按游戏记忆「旧版组件记住标记」开关（默认关闭，仅决战平安京等旧版 MPay 需要）。 */
+    public static String rememberAccountKey(String packageName) {
+        return "seed_is_remember_" + packageName;
+    }
+
     public static String mediaTreeKey(String packageName) {
         return "media_tree_" + packageName;
     }
